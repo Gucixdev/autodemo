@@ -267,7 +267,6 @@ static int gui_wheel(G *g, int up, int n) {
 }
 
 /* ---- lifecycle ---- */
-static int gui_available(void) { return 1; }
 static int gui_capture(G *g) {
   wl_pump(g);
   if (W.pid > 0 && !g->dead) { int st; if (waitpid(W.pid, &st, WNOHANG) == W.pid) { g->dead = 1; g->dead_status = WIFEXITED(st) ? WEXITSTATUS(st) : 1; W.pid = 0; } }
