@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <strings.h>
 #include <dirent.h>
 #include <ft2build.h>
@@ -919,6 +920,14 @@ int main(int argc, char **argv) {
   snprintf(xdg, sizeof xdg, "%s/.local/share", tm_home); setenv("XDG_DATA_HOME", xdg, 1);
   snprintf(xdg, sizeof xdg, "%s/.local/state", tm_home); setenv("XDG_STATE_HOME", xdg, 1);
   snprintf(xdg, sizeof xdg, "%s/.cache", tm_home); setenv("XDG_CACHE_HOME", xdg, 1);
+  { /* $AUTODEMO_ROOT = project root (parent of .autodemo/examples), so demos can run ./bin/x without absolute paths */
+    char rp[PATH_MAX], *sl;
+    if (realpath(in, rp) && (sl = strrchr(rp, '/'))) {
+      *sl = 0; size_t l = strlen(rp); const char *t = "/.autodemo/examples";
+      if (l >= strlen(t) && !strcmp(rp + l - strlen(t), t)) rp[l - strlen(t)] = 0;
+      setenv("AUTODEMO_ROOT", rp, 1);
+    }
+  }
   setenv("PS1", "$ ", 1); setenv("COLORTERM", "truecolor", 1);
   if (g->nenv < 16 && !getenv("AUTODEMO_KEEP_ENV")) {}
 

@@ -1,10 +1,10 @@
 # gtop: process viewer from holyc/notcoreutils
-Size 110x30
+Size 140x38
 Theme dark
 Title "gtop"
 Cd /tmp
 Slide "gtop" "a tiny top" 1500ms
-Run /data/dev/github/holyc/notcoreutils/bin/gtop
+Run $AUTODEMO_ROOT/bin/gtop
 Sleep 2s
 Caption "Live processes" bottom
 SendKey Down Down Down
