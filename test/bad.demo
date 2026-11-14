@@ -1,5 +1,5 @@
-type "x"
+Send "x"
 bogus 1
-wait 5parsecs
-key Enter Nonsense
-size 3x3
+Sleep 5parsecs
+SendKey Enter Nonsense
+Size 3x3

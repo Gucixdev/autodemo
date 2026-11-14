@@ -24,24 +24,39 @@ non-ASCII fallback, text fonts are DejaVu (override the mono font with `AUTODEMO
 Recording is real time (a 10 s demo takes ~10 s). Per-run temp dirs `/tmp/autodemo-home-*`
 are left behind (tiny); delete them yourself.
 
-## Script syntax (AutoIt-style names, case-insensitive; the old lowercase forms still work)
+## Script syntax
 
-| New | Old | |
-|---|---|---|
-| `Sleep 500ms` | `wait` | pause |
-| `Send "text"` | `type` | text appears at once, then a short pause (`CFG_SEND_PAUSE_MS`); `Typing human` switches to char-by-char (`Send "text" 45` = ms per char) |
-| `SendKey Enter Down C-c` | `key` | press keys |
-| `MouseMove x y [ms]` | `cursor move` | pointer to cell |
-| `MouseClick` / `MouseHide` / `MouseShow` | `cursor click/hide/show` | |
-| `Transition [in\|out\|both] EFFECT [ms]` | | effect when a slide appears (`in`) / goes away (`out`); default both. Effects: none fade zoom zoom-in zoom-out slide slide-in slide-out slide-left slide-right slide-up slide-down wipe |
-| `Speed N` | | playback speed of typing, mouse, sleeps and slides (default 2, `--speed N` on the command line) |
-| `Cut` / `CutEnd` | | frames in between are not recorded (loading screens); video time stands still |
-| `WaitFor "text" [timeout]` | | wait until the text is on screen (default 30 s, error if it never shows); pair with `Cut` |
-| `AutoCut on\|off\|MS` | | a picture that stays unchanged longer than MS (default `CFG_AUTOCUT_MS` 1500) stops costing video time; the render prints how much was cut |
-| `Feature "name"` | | starts a section; lines before the first `Feature` always run. `--feature NAME` renders only that one |
-| `PageScroll up\|down [n]` | | PageUp/PageDown keys (pagers, editors) |
-| `MouseScroll up\|down [n]` | | mouse wheel at the pointer (program must use mouse reporting) |
-| `Run`, `Caption`, `Slide`, `Transition`, `Window`, `Theme`, `Size`, `Title`, `Setup`, `Cd`, `Env`, `Fps`, `Font`, `Loop` | same | |
+Command names are case-insensitive (`Send`, `send`). One statement per line; optional `;` ends a statement
+(several per line), `Name(a, b)` works like `Name a b`, `#` starts a comment, `"strings"` take `\n \" \e` escapes.
+`Run`, `Setup`, `Cd`, `Env` take the rest of the line verbatim (shell code keeps its own `;`).
+`Feature "name" { ... }` and `Cut { ... }` are blocks closed with `}` (or the flat `Feature` / `Cut`..`CutEnd` forms).
+
+    Send("echo hi"); Sleep(500ms)
+    Feature "scrolling" {
+      PageScroll down 2
+    }
+
+**Header** (whole demo, position does not matter): `Size 100x30` (cells), `Theme dark|light|dracula|matrix`,
+`Font 15`, `Fps 10`, `Title "text"`, `Window tui` (gui/web not implemented yet), `Env KEY=VALUE`, `Cd DIR`,
+`Setup SHELL-CMD` (prepare fixtures in the private HOME), `Loop` (loop forever; default plays once),
+`Speed N`, `Typing instant|human`, `AutoCut on|off|MS`, `Transition [in|out|both] EFFECT [ms]`.
+
+**Timeline:**
+
+| Command | |
+|---|---|
+| `Run CMD` | start the program in the terminal (a shell works: `Run bash -i`) |
+| `Send "text" [ms]` | text appears at once, then a short pause (`CFG_SEND_PAUSE_MS`); `Typing human` types char by char (`ms` per char); `\n` is Enter |
+| `SendKey Enter Down*3 C-c` | tmux key names; `NAME*N` repeats |
+| `Sleep 500ms\|2s` | pause |
+| `MouseMove x y [ms]` / `MouseClick` / `MouseHide` / `MouseShow` | simulated pointer (cells, eased); click sends SGR mouse press/release to apps with mouse reporting |
+| `PageScroll up\|down [n]` / `MouseScroll up\|down [n]` | PageUp/PageDown, or mouse wheel at the pointer |
+| `Caption "text" [top\|bottom]` / `Caption off` | overlay until switched off |
+| `Slide "title" ["subtitle" [2s]]` | title card with animated build-up |
+| `Transition ...` | effects: none fade fade-in fade-out zoom zoom-in zoom-out slide slide-in slide-out slide-left slide-right slide-up slide-down wipe (in = entering a slide, out = leaving) |
+| `Cut` / `CutEnd`, `WaitFor "text" [timeout]` | drop loading screens from the video; wait until text is on screen (default 30 s) |
+| `Feature "name"` | section; lines before the first Feature always run; `--feature NAME` renders one, `--split` one file each |
+| `AutoCut on\|off\|MS` | a picture unchanged for longer than MS (default `CFG_AUTOCUT_MS`) stops costing video time |
 
 ## config.h
 
@@ -79,37 +94,6 @@ as lossy. `.mp4`/`.webm` output goes through ffmpeg. `--snap` dumps the frame sh
 
 Everything runs with a private `HOME` (and XDG dirs) and a private tmux server: your real configs and
 sessions are never touched. `setup` lines prepare files in that HOME.
-
-## Script format
-
-One command per line, `#` comments, `"quoted strings"` with `\n \" \e` escapes.
-`run`, `setup`, `cd`, `env` take the rest of the line verbatim.
-
-Header directives (apply to the whole demo, position does not matter):
-
-    size 100x30          terminal cells (default 100x30)
-    theme dark|light|dracula
-    font 15              pixel size of the monospace font (cell size follows)
-    fps 10               sampling rate while waiting
-    title "text"         window title (default: the run command)
-    window tui           tui is the only implemented backend
-    env KEY=VALUE        env for the program      cd DIR   working dir
-    loop                 loop forever (default: play once)
-
-Timeline commands:
-
-    setup SHELL-CMD              run before/while recording, in the private HOME (create fixtures)
-    run CMD                      start the program in the terminal (a shell works too: run bash -i)
-    type "text" [ms-per-char]    human-like jittered typing; "\n" is Enter
-    key Enter C-c Down*3 ...     tmux key names; NAME*N repeats
-    wait 500ms | 2s
-    caption "text" [top|bottom]  persistent overlay until `caption off`
-    slide "title" ["subtitle" [2s]]
-    transition NAME [300ms]      effect when entering/leaving slides: none fade slide slide-left slide-right slide-up
-                                 slide-down zoom zoom-out wipe (src/fx.c; defaults in src/config.h)
-    cursor move X Y [ms]         simulated mouse pointer, X Y in cells, eased
-    cursor click                 ripple + SGR mouse press/release sent to apps that enabled mouse reporting
-    cursor hide | show
 
 ## Sizes (all lossless WebP unless noted)
 

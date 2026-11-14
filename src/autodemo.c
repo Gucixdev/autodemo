@@ -41,12 +41,12 @@ static void say(int lv, const char *fmt, ...) {
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_PSCROLL, C_MSCROLL, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_FEATEND, C_PSCROLL, C_MSCROLL, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
-  {"run",C_RUN,1,1},{"type",C_TYPE,1,2},{"key",C_KEY,1,5},{"wait",C_WAIT,1,1},
+  {"run",C_RUN,1,1},{"send",C_TYPE,1,2},{"sendkey",C_KEY,1,5},{"sleep",C_WAIT,1,1},{"mousemove",C_CMOVE,2,3},{"mouseclick",C_CCLICK,0,0},{"mousehide",C_CHIDE,0,0},{"mouseshow",C_CSHOW,0,0},
   {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,2},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
@@ -99,20 +99,56 @@ static int valid_key(const char *k) {
   return 0;
 }
 
-/* AutoIt-style names: case-insensitive, with aliases onto the base commands.
-   Sleep=wait, Send=type, SendKey=key, MouseMove/MouseClick/MouseHide/MouseShow=cursor move|click|hide|show.
-   The lowercase base forms keep working. */
+/* command names are case-insensitive: Send, send and SEND are the same */
 static void alias_cmd(char **tok, int *n) {
-  static char low[32]; size_t l = strlen(tok[0]);
+  static char low[32]; size_t l = strlen(tok[0]); (void)n;
   if (l >= sizeof low) return;
   for (size_t i = 0; i <= l; i++) low[i] = (char)tolower((unsigned char)tok[0][i]);
-  static const struct { const char *from, *to, *sub; } A[] = {
-    {"sleep","wait",0},{"send","type",0},{"sendkey","key",0},
-    {"mousemove","cursor","move"},{"mouseclick","cursor","click"},{"mousehide","cursor","hide"},{"mouseshow","cursor","show"},{0}};
-  const char *to = low, *sub = NULL;
-  for (int k = 0; A[k].from; k++) if (!strcmp(low, A[k].from)) { to = A[k].to; sub = A[k].sub; break; }
-  tok[0] = (char *)to;
-  if (sub && *n < 12) { memmove(tok + 2, tok + 1, (size_t)(*n - 1) * sizeof *tok); tok[1] = (char *)sub; (*n)++; }
+  tok[0] = low;
+}
+
+/* ---- readability layer: statements may end with ';', several may share a line, a command may be written
+   Send("text"), and Feature "x" { ... } / Cut { ... } blocks close with '}'. All optional; plain lines still work.
+   Run/Setup/Cd/Env keep the rest of the line verbatim (shell code has its own ';'). ---- */
+typedef struct { char *t; int line; } Stmt;
+static void stmt_add(Stmt **v, size_t *n, size_t *cap, const char *t, size_t len, int line) {
+  while (len && isspace((unsigned char)*t)) { t++; len--; }
+  while (len && isspace((unsigned char)t[len - 1])) len--;
+  if (!len) return;
+  if (*n == *cap) { *cap = *cap ? *cap * 2 : 64; *v = realloc(*v, *cap * sizeof **v); }
+  (*v)[*n].t = strndup(t, len); (*v)[*n].line = line; (*n)++;
+}
+/* Name(a, b) -> Name a b  (only when '(' directly follows the command name; commas outside quotes become spaces) */
+static void call_form(char *t) {
+  size_t i = 0; while (isalnum((unsigned char)t[i])) i++;
+  if (!i || t[i] != '(') return;
+  t[i] = ' '; int q = 0, last = -1;
+  for (size_t k = i + 1; t[k]; k++) {
+    if (t[k] == '\\' && q && t[k + 1]) { k++; continue; }
+    if (t[k] == '"') q = !q;
+    else if (!q && t[k] == ',') t[k] = ' ';
+    else if (!q && t[k] == ')') last = (int)k;
+  }
+  if (last >= 0) t[last] = ' ';
+}
+static void expand_line(const char *buf, int line, Stmt **v, size_t *n, size_t *cap) {
+  const char *w = buf; while (isspace((unsigned char)*w)) w++;
+  size_t wl = strcspn(w, " \t\n(");
+  if ((wl == 3 && !strncasecmp(w, "run", 3)) || (wl == 5 && !strncasecmp(w, "setup", 5)) || (wl == 2 && !strncasecmp(w, "cd", 2)) || (wl == 3 && !strncasecmp(w, "env", 3))) {
+    stmt_add(v, n, cap, buf, strlen(buf), line); return; }
+  const char *st = buf; int q = 0; size_t i = 0;
+  for (; buf[i]; i++) {
+    char c = buf[i];
+    if (q) { if (c == '\\' && buf[i + 1]) i++; else if (c == '"') q = 0; continue; }
+    if (c == '"') { q = 1; continue; }
+    if (c == '#') break;
+    if (c == ';' || c == '{' || c == '}') {
+      stmt_add(v, n, cap, st, (size_t)(buf + i - st), line);
+      if (c != ';') { char m[3] = {1, c, 0}; stmt_add(v, n, cap, m, 2, line); }
+      st = buf + i + 1;
+    }
+  }
+  stmt_add(v, n, cap, st, (size_t)(buf + i - st), line);
 }
 
 /* returns 0 ok; on error prints file:line and returns -1 (continues to report all) */
@@ -120,8 +156,24 @@ static int parse_script(const char *path, Script *sc) {
   FILE *f = fopen(path, "r");
   if (!f) { say(LV_ERR, "%s: %s\n", path, strerror(errno)); return -1; }
   char buf[4096]; int line = 0, bad = 0, seen_run = 0;
-  while (fgets(buf, sizeof buf, f)) {
-    line++;
+  Stmt *st = NULL; size_t nst = 0, capst = 0; int depth = 0, blk[16];
+  { int ln = 0; while (fgets(buf, sizeof buf, f)) expand_line(buf, ++ln, &st, &nst, &capst); }
+  for (size_t si = 0; si < nst; si++) {
+    snprintf(buf, sizeof buf, "%s", st[si].t); line = st[si].line;
+    if (buf[0] == 1) { /* block marker from the readability layer */
+      int last = sc->n ? sc->v[sc->n - 1].op : -1;
+      if (buf[1] == '{') {
+        if (last != C_FEATURE && last != C_CUT) { say(LV_ERR, "%s:%d: '{' only follows Feature \"name\" or Cut\n", path, line); bad = 1; continue; }
+        if (depth >= 16) { say(LV_ERR, "%s:%d: blocks nested too deep\n", path, line); bad = 1; continue; }
+        blk[depth++] = last;
+      } else {
+        if (!depth) { say(LV_ERR, "%s:%d: '}' without a matching '{'\n", path, line); bad = 1; continue; }
+        Cmd e = {.line = line, .op = blk[--depth] == C_CUT ? C_CUTEND : C_FEATEND};
+        if (sc->n == sc->cap) { sc->cap = sc->cap ? sc->cap * 2 : 64; sc->v = realloc(sc->v, sc->cap * sizeof(Cmd)); }
+        sc->v[sc->n++] = e;
+      }
+      continue;
+    }
     char *tok[12], err[128] = "";
     int n;
     { /* run/setup/cd/env/title take the rest of the line verbatim unless it is one quoted string */
@@ -133,21 +185,14 @@ static int parse_script(const char *path, Script *sc) {
         if (*r && *r != '#' && *r != '"') { w[wl] = 0; tok[0] = w; tok[1] = r; n = 2; goto tokenized; }
       }
     }
+    call_form(buf);
     n = tokenize(buf, tok, 12, err);
     tokenized:
     if (n < 0) { say(LV_ERR, "%s:%d: %s\n", path, line, err); bad = 1; continue; }
     if (!n) continue;
     alias_cmd(tok, &n);
     Cmd c = {.line = line}; int op = -1, argi = 1;
-    if (!strcmp(tok[0], "cursor")) {
-      const char *sub = n > 1 ? tok[1] : "";
-      op = !strcmp(sub, "move") ? C_CMOVE : !strcmp(sub, "click") ? C_CCLICK :
-           !strcmp(sub, "hide") ? C_CHIDE : !strcmp(sub, "show") ? C_CSHOW : -1;
-      argi = 2;
-      if (op < 0) { say(LV_ERR, "%s:%d: cursor needs move|click|hide|show\n", path, line); bad = 1; continue; }
-      int need = op == C_CMOVE ? 2 : 0, nn = n - 2;
-      if (nn < need || nn > need + 1) { say(LV_ERR, "%s:%d: cursor %s: wrong argument count\n", path, line, sub); bad = 1; continue; }
-    } else {
+    {
       int k;
       for (k = 0; SPEC[k].name; k++) if (!strcmp(tok[0], SPEC[k].name)) break;
       if (!SPEC[k].name) { say(LV_ERR, "%s:%d: unknown command '%s'\n", path, line, tok[0]); bad = 1; continue; }
@@ -160,7 +205,7 @@ static int parse_script(const char *path, Script *sc) {
     switch (op) {
     case C_RUN: seen_run = 1; break;
     case C_TYPE: case C_KEY: case C_CCLICK:
-      if (!seen_run) { say(LV_ERR, "%s:%d: input before any 'run'\n", path, line); ok = 0; }
+      if (!seen_run) { say(LV_ERR, "%s:%d: input before any Run\n", path, line); ok = 0; }
       if (op == C_TYPE && c.n > 1 && atoi(c.a[1]) < 1) { say(LV_ERR, "%s:%d: type speed must be ms per char >= 1\n", path, line); ok = 0; }
       if (op == C_KEY) for (int i = 0; i < c.n; i++) if (!valid_key(c.a[i])) { say(LV_ERR, "%s:%d: bad key '%s'\n", path, line, c.a[i]); ok = 0; }
       break;
@@ -205,6 +250,9 @@ static int parse_script(const char *path, Script *sc) {
     sc->v[sc->n++] = c;
   }
   fclose(f);
+  if (depth) { say(LV_ERR, "%s: '{' never closed\n", path); bad = 1; }
+  for (size_t i = 0; i < nst; i++) free(st[i].t);
+  free(st);
   return bad ? -1 : 0;
 }
 
@@ -620,23 +668,58 @@ static void transition(G *g, const Img *A, const Img *B, int which) {
   }
   free(M.p);
 }
-static void render_slide(G *g, Img *S, const char *title, const char *sub) {
-  const Theme *t = &THEMES[g->theme];
-  for (int y = 0; y < S->h; y++) { /* subtle vertical gradient */
-    uint32_t c = t->bg; int k = y * CFG_SLIDE_GRADIENT / S->h;
-    int r = (c >> 16 & 255) + k / 2, gg = (c >> 8 & 255) + k / 2, b = (c & 255) + k; if (r > 255) r = 255; if (gg > 255) gg = 255; if (b > 255) b = 255;
-    img_fill(S, 0, y, S->w, 1, r << 16 | gg << 8 | b, 255);
+/* soft radial light: alpha falls off quadratically from the centre */
+static void img_glow(Img *im, int cx, int cy, int r, uint32_t c, int maxa) {
+  for (int y = cy - r < 0 ? 0 : cy - r; y < im->h && y <= cy + r; y++)
+    for (int x = cx - r < 0 ? 0 : cx - r; x < im->w && x <= cx + r; x++) {
+      double d = sqrt((double)((x - cx) * (x - cx) + (y - cy) * (y - cy))) / r; if (d >= 1) continue;
+      img_px(im, x, y, c, (int)(maxa * (1 - d) * (1 - d)));
+    }
+}
+/* slide background: theme colour, two soft glows (accent top-left, text colour bottom-right), faint dot grid, corner brackets */
+static void slide_bg(G *g, Img *S) {
+  const Theme *t = &THEMES[g->theme]; uint32_t ac = t->accent ? t->accent : t->pal[CFG_SLIDE_ACCENT];
+  img_fill(S, 0, 0, S->w, S->h, t->bg, 255);
+  int r = S->w > S->h ? S->w : S->h;
+  img_glow(S, S->w / 5, S->h / 4, r * 6 / 10, ac, CFG_SLIDE_GLOW);
+  img_glow(S, S->w * 4 / 5, S->h * 4 / 5, r * 5 / 10, t->fg, CFG_SLIDE_GLOW / 2);
+  if (CFG_SLIDE_DOTS) for (int y = 18; y < S->h; y += CFG_SLIDE_DOTS) for (int x = 18; x < S->w; x += CFG_SLIDE_DOTS) img_px(S, x, y, t->fg, 26);
+  int in = 16, L = 26; /* corner brackets */
+  for (int k = 0; k < 4; k++) {
+    int x = (k & 1) ? S->w - in : in, y = (k & 2) ? S->h - in : in, dx = (k & 1) ? -1 : 1, dy = (k & 2) ? -1 : 1;
+    img_fill(S, dx > 0 ? x : x - L, dy > 0 ? y : y - 2, L, 2, ac, 170);
+    img_fill(S, dx > 0 ? x : x - 2, dy > 0 ? y : y - L, 2, L, ac, 170);
   }
-  int tp = S->w / 14; if (tp > 56) tp = 56; if (tp < 20) tp = 20;
-  while (tp > 16 && text_width(fsansb, tp, title) > S->w - 60) tp -= 2;
-  int tw = text_width(fsansb, tp, title);
-  int cy = S->h / 2 - (sub && *sub ? tp / 2 : 0);
-  draw_text(S, fsansb, tp, (S->w - tw) / 2, cy + tp / 3, title, t->fg, 255);
-  img_fill(S, S->w / 2 - 30, cy + tp, 60, 3, t->accent ? t->accent : t->pal[CFG_SLIDE_ACCENT], 255);
-  if (sub && *sub) {
-    int sp = tp / 2 + 2, sw = text_width(fsans, sp, sub);
-    draw_text(S, fsans, sp, (S->w - sw) / 2, cy + tp + sp + 20, sub, t->fg, 190);
+}
+/* title, accent pill and subtitle; p* = reveal progress 0..1 (fade + rise) */
+static void slide_text(G *g, Img *S, const char *title, const char *sub, double pt, double pb, double ps) {
+  const Theme *t = &THEMES[g->theme]; uint32_t ac = t->accent ? t->accent : t->pal[CFG_SLIDE_ACCENT];
+  int tp = S->w / 9; if (tp > 76) tp = 76; if (tp < 22) tp = 22;
+  while (tp > 16 && text_width(fsansb, tp, title) > S->w - 90) tp -= 2;
+  int tw = text_width(fsansb, tp, title), has = sub && *sub;
+  int cy = S->h / 2 - (has ? tp / 3 : 0);
+  int ty = cy + tp / 3 + (int)((1 - pt) * 16);
+  if (pt > 0) draw_text(S, fsansb, tp, (S->w - tw) / 2, ty, title, t->fg, (int)(255 * pt));
+  int bw = (int)(CFG_SLIDE_BAR_W * pb); if (bw > 0) img_rrect(S, (S->w - bw) / 2, cy + tp - 2, bw, 5, 2, ac, 255);
+  if (has && ps > 0) {
+    int sp = tp * 2 / 5; if (sp < 13) sp = 13;
+    int sw = text_width(fsans, sp, sub);
+    draw_text(S, fsans, sp, (S->w - sw) / 2, cy + tp + sp + 22 + (int)((1 - ps) * 12), sub, t->fg, (int)(190 * ps));
   }
+}
+static void render_slide(G *g, Img *S, const char *title, const char *sub) { slide_bg(g, S); slide_text(g, S, title, sub, 1, 1, 1); }
+/* background first (via the transition), then the text builds up: title rises in, bar grows, subtitle follows */
+static void slide_reveal(G *g, Img *S, const char *title, const char *sub, int total_ms) {
+  Img bg = img_new(S->w, S->h); slide_bg(g, &bg);
+  int n = total_ms / CFG_FX_STEP_MS; if (n < 1) n = 1;
+  for (int i = 1; i <= n; i++) {
+    double u = (double)i / n, e = u * u * (3 - 2 * u);
+    double pb = (u - 0.2) / 0.5, ps = (u - 0.45) / 0.55; pb = pb < 0 ? 0 : pb > 1 ? 1 : pb; ps = ps < 0 ? 0 : ps > 1 ? 1 : ps;
+    memcpy(S->p, bg.p, (size_t)S->w * S->h * 4);
+    slide_text(g, S, title, sub, e, pb * pb * (3 - 2 * pb), ps * ps * (3 - 2 * ps));
+    put(g, S, CFG_FX_STEP_MS);
+  }
+  free(bg.p);
 }
 
 /* ---- input ---- */
@@ -809,6 +892,7 @@ static void dump_ascii(G *g, const Cmd *c) {
 static int execute(G *g, Script *sc) {
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i]; int ms;
+    if (c->op == C_FEATEND) { g->feat_seen = 0; g->in_feat = 1; continue; } /* back to always-run commands */
     if (c->op == C_FEATURE) { g->feat_seen = 1; g->in_feat = !g->only_feat || feat_match(c->a[0], g->only_feat); continue; }
     if (g->only_feat && g->feat_seen && !g->in_feat) continue; /* another feature's commands */
     switch (c->op) {
@@ -838,8 +922,10 @@ static int execute(G *g, Script *sc) {
       ms = CFG_SLIDE_MS; if (c->n == 3) dur_ms(c->a[2], &ms);
       if (g->have_session) capture(g);
       compose(g); Img A = img_new(g->W, g->H); memcpy(A.p, g->frame.p, (size_t)g->W * g->H * 4);
-      Img S = img_new(g->W, g->H); render_slide(g, &S, c->a[0], c->n > 1 ? c->a[1] : "");
-      transition(g, &A, &S, 0); put(g, &S, sp(g, ms));
+      Img S = img_new(g->W, g->H);
+      if (CFG_SLIDE_REVEAL_MS > 0) { Img B = img_new(g->W, g->H); slide_bg(g, &B); transition(g, &A, &B, 0); free(B.p); slide_reveal(g, &S, c->a[0], c->n > 1 ? c->a[1] : "", sp(g, CFG_SLIDE_REVEAL_MS)); }
+      else { render_slide(g, &S, c->a[0], c->n > 1 ? c->a[1] : ""); transition(g, &A, &S, 0); }
+      put(g, &S, sp(g, ms));
       if (g->have_session) { capture(g); render_layer(g); }
       compose(g); transition(g, &S, &g->frame, 1); g->dirty = 1;
       if (g->preview) dump_ascii(g, c);
@@ -854,7 +940,7 @@ static int execute(G *g, Script *sc) {
       for (int w = lo; w <= hi; w++) { snprintf(g->trans[w], sizeof g->trans[w], "%s", c->a[k]); g->trans_ms[w] = tms; }
       break; }
     case C_CMOVE: ms = CFG_MOVE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); pointer_move(g, atof(c->a[0]), atof(c->a[1]), sp(g, ms)); break;
-    case C_CCLICK: if (!g->ptr_on) { say(LV_ERR, "line %d: click before cursor move\n", c->line); return -1; } pointer_click(g); break;
+    case C_CCLICK: if (!g->ptr_on) { say(LV_ERR, "line %d: MouseClick before MouseMove\n", c->line); return -1; } pointer_click(g); break;
     case C_CHIDE: g->ptr_on = 0; g->dirty = 1; tick(g, 50); break;
     case C_CSHOW: g->ptr_on = 1; g->dirty = 1; tick(g, 50); break;
     default: break; /* header directives were applied earlier */
@@ -1130,6 +1216,7 @@ int main(int argc, char **argv) {
     g->ff = popen(cmd, "w"); if (!g->ff) { say(LV_ERR, "ffmpeg not available\n"); return 1; }
     g->outfmt = 'v';
   } else if (render) {
+    for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_LOOP) g->loop = 1; /* before the encoder exists, or the loop flag is lost */
     WebPAnimEncoderOptionsInit(&g->eopt); g->eopt.anim_params.loop_count = g->loop ? 0 : 1; g->eopt.minimize_size = 1; g->eopt.allow_mixed = 1;
     WebPConfigInit(&g->wcfg); g->wcfg.lossless = q == 0; g->wcfg.quality = q ? q : 90; g->wcfg.method = CFG_WEBP_METHOD;
     if (q == 0) g->wcfg.exact = 0;

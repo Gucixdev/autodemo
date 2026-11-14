@@ -70,7 +70,10 @@
 #define CFG_CAPTION_BG      0x000000
 #define CFG_CAPTION_BG_ALPHA 205
 #define CFG_CAPTION_FG      0xffffff
-#define CFG_SLIDE_GRADIENT  24         /* slide background: how much lighter the bottom gets (0 = flat) */
+#define CFG_SLIDE_GLOW      78         /* slide: strength of the two soft light spots (0 = flat background) */
+#define CFG_SLIDE_DOTS      22         /* slide: spacing of the faint dot grid in px (0 = none) */
+#define CFG_SLIDE_BAR_W     84         /* slide: width of the accent pill under the title */
+#define CFG_SLIDE_REVEAL_MS 500        /* slide: title/pill/subtitle build-up animation (0 = slide appears finished) */
 #define CFG_SLIDE_ACCENT    4          /* slide underline colour = this palette index of the theme (4 = blue) */
 
 /* ---- themes: name, 16-colour ANSI palette (0..7 normal, 8..15 bright), default text, terminal background,
