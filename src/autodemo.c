@@ -376,6 +376,8 @@ typedef struct {
   int W, H, M, TB, PAD, tx0, ty0;
   /* state */
   Grid gr, prev; int have_session, dirty;
+  /* quality gate */
+  int idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
@@ -390,6 +392,8 @@ typedef struct {
 
 static void msleep(G *g, int ms) {
   if (ms <= 0) return;
+  /* fast-forward: a screen that has not changed for a few polls is idle, so do not really wait (video time still advances) */
+  if (!g->realtime && g->idle >= 3) return;
   ms = (int)(ms * g->sleep_scale);
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L}; nanosleep(&ts, NULL);
 }
@@ -484,24 +488,61 @@ static void present_dirty(G *g, int dur) {
 }
 
 /* ---- capture ---- */
+
+/* ---- quality gate: sample every captured screen, judge the demo at the end ---- */
+static void gate_sample(G *g) {
+  int total = g->gr.cols * g->gr.rows, cells = 0, ns = 0; uint64_t h = 1469598103934665603ULL;
+  uint32_t seen[64][3]; 
+  for (int i = 0; i < total; i++) {
+    Cell *c = &g->gr.c[i];
+    h = (h ^ c->cp) * 1099511628211ULL; h = (h ^ c->fg) * 1099511628211ULL; h = (h ^ c->bg) * 1099511628211ULL;
+    if (c->cp && c->cp != ' ') {
+      cells++; int f = 0;
+      for (int k = 0; k < ns; k++) if (seen[k][0] == c->fg && seen[k][1] == c->bg && seen[k][2] == c->at) { f = 1; break; }
+      if (!f && ns < 64) { seen[ns][0] = c->fg; seen[ns][1] = c->bg; seen[ns][2] = c->at; ns++; }
+    }
+  }
+  if (cells > g->peak_cells) g->peak_cells = cells;
+  if (ns > g->peak_styles) g->peak_styles = ns;
+  if (h != g->last_hash) { g->nstates++; g->last_hash = h; }
+}
+
+/* returns number of errors; warnings only print. --force keeps the output anyway */
+static int gate_verdict(G *g) {
+  int total = g->cols * g->rows, err = 0;
+  double fill = total ? 100.0 * g->peak_cells / total : 0;
+  if (g->dead && g->dead_status != 0) {
+    fprintf(stderr, "autodemo: BAD DEMO: the program died (exit status %d). Last screen:\n%s\n", g->dead_status, g->dead_screen); err++;
+  }
+  if (fill < 3.0) { fprintf(stderr, "autodemo: BAD DEMO: the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
+  else if (fill < 10.0) fprintf(stderr, "autodemo: warning: sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
+  if (g->ninputs && g->nstates <= 1) { fprintf(stderr, "autodemo: BAD DEMO: %d input(s) sent but the screen never changed\n", g->ninputs); err++; }
+  else if (g->nstates <= 2 && g->T > 3000) fprintf(stderr, "autodemo: warning: only %d distinct screens in %.1fs; looks static\n", g->nstates, g->T / 1000.0);
+  if (g->peak_styles < 3 && fill >= 3.0) fprintf(stderr, "autodemo: warning: only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
+  return err;
+}
+
 static int capture(G *g) {
   char *out = NULL;
-  int rc = tmux((char *[]){"capture-pane", "-p", "-e", "-t", "d", ";", "display-message", "-p", "-t", "d", "@@CUR@@ #{cursor_x} #{cursor_y} #{cursor_flag}", NULL}, &out);
+  int rc = tmux((char *[]){"capture-pane", "-p", "-e", "-t", "d", ";", "display-message", "-p", "-t", "d", "@@CUR@@ #{cursor_x} #{cursor_y} #{cursor_flag} #{pane_dead} #{pane_dead_status}", NULL}, &out);
   if (rc || !out) { free(out); return -1; }
-  char *m = strstr(out, "@@CUR@@"); int cx = 0, cy = 0, cf = 0;
-  if (m) { sscanf(m + 7, "%d %d %d", &cx, &cy, &cf); *m = 0; }
+  char *m = strstr(out, "@@CUR@@"); int cx = 0, cy = 0, cf = 0, pd = 0, ps = 0;
+  if (m) { sscanf(m + 7, "%d %d %d %d %d", &cx, &cy, &cf, &pd, &ps); *m = 0; }
+  if (pd && !g->dead) { g->dead = 1; g->dead_status = ps; snprintf(g->dead_screen, sizeof g->dead_screen, "%s", out); }
   grid_parse(&g->gr, out, &THEMES[g->theme]); free(out);
   g->gr.cx = cx; g->gr.cy = cy; g->gr.cvis = cf;
+  if (g->in_run && !g->dead) gate_sample(g);
   size_t sz = (size_t)g->gr.cols * g->gr.rows * sizeof(Cell);
   if (memcmp(g->gr.c, g->prev.c, sz) || g->gr.cx != g->prev.cx || g->gr.cy != g->prev.cy || g->gr.cvis != g->prev.cvis) {
+    g->idle = 0;
     memcpy(g->prev.c, g->gr.c, sz); g->prev.cx = g->gr.cx; g->prev.cy = g->gr.cy; g->prev.cvis = g->gr.cvis;
     render_layer(g); g->dirty = 1;
-  }
+  } else g->idle++;
   return 0;
 }
 /* one timeline step: let the app settle, sample the screen, show it for ms */
 static void tick(G *g, int ms) {
-  int settle = ms < 25 ? ms : 25;
+  int settle = ms < 10 ? ms : 10;
   msleep(g, settle);
   if (g->have_session) capture(g);
   present_dirty(g, ms);
@@ -556,11 +597,13 @@ static int send_text(G *g, const char *s, int speed) {
     if (ch_[0] == '\n') rc = TMUX("send-keys", "-t", "d", "Enter");
     else rc = TMUX("send-keys", "-t", "d", "-l", "--", ch_);
     if (rc) { fprintf(stderr, "autodemo: tmux send-keys failed\n"); return -1; }
+    g->idle = 0;
     tick(g, ch_[0] == '\n' ? speed * 3 : jitter(speed));
   }
   return 0;
 }
 static int send_key(G *g, const char *spec) {
+  g->idle = 0;
   char b[64]; strncpy(b, spec, 63); b[63] = 0; int rep = 1;
   char *star = strchr(b, '*'); if (star) { *star = 0; rep = atoi(star + 1); }
   for (int i = 0; i < rep; i++) {
@@ -638,13 +681,13 @@ static int execute(G *g, Script *sc) {
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i]; int ms;
     switch (c->op) {
-    case C_RUN: if (start_session(g, c->a[0])) return -1; g->dirty = 1; if (!g->title[0]) snprintf(g->title, sizeof g->title, "%.100s", c->a[0]); render_layer(g); g->dirty = 1; tick(g, 200); if (g->preview) dump_ascii(g, c); break;
+    case C_RUN: if (start_session(g, c->a[0])) return -1; g->in_run = 1; g->dirty = 1; if (!g->title[0]) snprintf(g->title, sizeof g->title, "%.100s", c->a[0]); render_layer(g); g->dirty = 1; tick(g, 200); if (g->preview) dump_ascii(g, c); break;
     case C_SETUP: {
       char *argv[] = {"sh", "-c", c->a[0], NULL};
       if (run_argv(argv, NULL)) { fprintf(stderr, "line %d: setup command failed\n", c->line); return -1; }
       break; }
-    case C_TYPE: if (send_text(g, c->a[0], c->n > 1 ? atoi(c->a[1]) : 55)) return -1; break;
-    case C_KEY: for (int k = 0; k < c->n; k++) if (send_key(g, c->a[k])) return -1; break;
+    case C_TYPE: g->ninputs++; if (send_text(g, c->a[0], c->n > 1 ? atoi(c->a[1]) : 55)) return -1; break;
+    case C_KEY: g->ninputs++; for (int k = 0; k < c->n; k++) if (send_key(g, c->a[k])) return -1; break;
     case C_WAIT: dur_ms(c->a[0], &ms); wait_ms(g, ms); if (g->preview) dump_ascii(g, c); break;
     case C_CAPTION:
       snprintf(g->caption, sizeof g->caption, "%s", !strcmp(c->a[0], "off") ? "" : c->a[0]);
@@ -707,7 +750,7 @@ static long estimate_ms(Script *sc) {
 }
 
 static int usage(void) {
-  fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--snap MS FILE.ppm]\n"
+  fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--force] [--realtime] [--snap MS FILE.ppm]\n"
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
                   "       autodemo export NAME.fmt...  (NAME from .autodemo/examples, fmt webp|mp4|webm)\n"
@@ -821,6 +864,8 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
     else if (!strcmp(argv[i], "-q") && i + 1 < argc) q = atoi(argv[++i]);
     else if (!strcmp(argv[i], "-v")) verbose = 1;
+    else if (!strcmp(argv[i], "--force")) g->force = 1;
+    else if (!strcmp(argv[i], "--realtime")) g->realtime = 1;
     else if (!strcmp(argv[i], "--snap") && i + 2 < argc && g->nsnap < 8) { g->snap[g->nsnap].ms = atol(argv[++i]); g->snap[g->nsnap++].file = argv[++i]; }
     else return usage();
   }
@@ -894,6 +939,11 @@ int main(int argc, char **argv) {
   int rc = execute(g, &sc);
   if (g->have_session) TMUX("kill-server");
   if (rc) return 1;
+  int bad = gate_verdict(g);
+  if (bad && !g->force) {
+    fprintf(stderr, "autodemo: not writing %s (%d problem%s). Fix the demo, or pass --force to keep it.\n", out ? out : "output", bad, bad == 1 ? "" : "s");
+    return 4;
+  }
   /* hold the last frame briefly so loops do not snap */
   present_dirty(g, 600);
   for (int i = 0; i < g->nsnap; i++) if (!g->snap[i].done && g->have_last) write_ppm(&g->last, g->snap[i].file);
