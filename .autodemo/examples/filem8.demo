@@ -1,0 +1,8 @@
+# filem8 (GUI file manager): needs the gui backend
+Window gui
+Size 120x36
+Title "filem8"
+Run /data/dev/github/filem8/target/release/filem8
+Sleep 2s
+Caption "filem8" bottom
+Sleep 2s

@@ -1,0 +1,8 @@
+# firefox (web): needs the web/gui backend
+Window web
+Size 120x36
+Title "firefox"
+Run flatpak run org.mozilla.firefox
+Sleep 3s
+Caption "browsing" bottom
+Sleep 2s

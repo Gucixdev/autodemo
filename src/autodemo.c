@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <strings.h>
+#include <dirent.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <webp/encode.h>
@@ -80,6 +82,22 @@ static int valid_key(const char *k) {
   return 0;
 }
 
+/* AutoIt-style names: case-insensitive, with aliases onto the base commands.
+   Sleep=wait, Send=type, SendKey=key, MouseMove/MouseClick/MouseHide/MouseShow=cursor move|click|hide|show.
+   The lowercase base forms keep working. */
+static void alias_cmd(char **tok, int *n) {
+  static char low[32]; size_t l = strlen(tok[0]);
+  if (l >= sizeof low) return;
+  for (size_t i = 0; i <= l; i++) low[i] = (char)tolower((unsigned char)tok[0][i]);
+  static const struct { const char *from, *to, *sub; } A[] = {
+    {"sleep","wait",0},{"send","type",0},{"sendkey","key",0},
+    {"mousemove","cursor","move"},{"mouseclick","cursor","click"},{"mousehide","cursor","hide"},{"mouseshow","cursor","show"},{0}};
+  const char *to = low, *sub = NULL;
+  for (int k = 0; A[k].from; k++) if (!strcmp(low, A[k].from)) { to = A[k].to; sub = A[k].sub; break; }
+  tok[0] = (char *)to;
+  if (sub && *n < 12) { memmove(tok + 2, tok + 1, (size_t)(*n - 1) * sizeof *tok); tok[1] = (char *)sub; (*n)++; }
+}
+
 /* returns 0 ok; on error prints file:line and returns -1 (continues to report all) */
 static int parse_script(const char *path, Script *sc) {
   FILE *f = fopen(path, "r");
@@ -92,7 +110,7 @@ static int parse_script(const char *path, Script *sc) {
     { /* run/setup/cd/env/title take the rest of the line verbatim unless it is one quoted string */
       char *w = buf; while (isspace((unsigned char)*w)) w++;
       size_t wl = strcspn(w, " \t\n");
-      if ((wl == 3 && !strncmp(w, "run", 3)) || (wl == 5 && !strncmp(w, "setup", 5)) || (wl == 2 && !strncmp(w, "cd", 2)) || (wl == 3 && !strncmp(w, "env", 3))) {
+      if ((wl == 3 && !strncasecmp(w, "run", 3)) || (wl == 5 && !strncasecmp(w, "setup", 5)) || (wl == 2 && !strncasecmp(w, "cd", 2)) || (wl == 3 && !strncasecmp(w, "env", 3))) {
         char *r = w + wl; while (*r == ' ' || *r == '\t') r++;
         size_t rl = strlen(r); while (rl && isspace((unsigned char)r[rl - 1])) r[--rl] = 0;
         if (*r && *r != '#' && *r != '"') { w[wl] = 0; tok[0] = w; tok[1] = r; n = 2; goto tokenized; }
@@ -102,6 +120,7 @@ static int parse_script(const char *path, Script *sc) {
     tokenized:
     if (n < 0) { fprintf(stderr, "%s:%d: %s\n", path, line, err); bad = 1; continue; }
     if (!n) continue;
+    alias_cmd(tok, &n);
     Cmd c = {.line = line}; int op = -1, argi = 1;
     if (!strcmp(tok[0], "cursor")) {
       const char *sub = n > 1 ? tok[1] : "";
@@ -691,6 +710,8 @@ static int usage(void) {
   fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--snap MS FILE.ppm]\n"
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
+                  "       autodemo export NAME.fmt...  (NAME from .autodemo/examples, fmt webp|mp4|webm)\n"
+                  "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
                   "  no -o: writes .autodemo/export/NAME.webp next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless (default), 1..100 = lossy quality\n");
   return 2;
 }
@@ -703,7 +724,96 @@ static void mkdir_p(const char *path) {
   for (char *p = t + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(t, 0755); *p = '/'; }
 }
 
+/* ---- project-level commands: export / bulk / list (walk up to find .autodemo/examples) ---- */
+static int find_root(char *root, size_t n) {
+  char d[1024]; if (!getcwd(d, sizeof d)) return -1;
+  for (;;) {
+    char t[1100]; snprintf(t, sizeof t, "%s/.autodemo/examples", d);
+    struct stat st; if (!stat(t, &st) && S_ISDIR(st.st_mode)) { snprintf(root, n, "%s", d); return 0; }
+    char *sl = strrchr(d, '/'); if (!sl || sl == d) return -1; *sl = 0;
+  }
+}
+static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+/* sorted demo names (without .demo) */
+static int list_demos(const char *root, char ***names) {
+  char dir[1100]; snprintf(dir, sizeof dir, "%s/.autodemo/examples", root);
+  DIR *d = opendir(dir); if (!d) return 0;
+  char **v = NULL; int n = 0; struct dirent *e;
+  while ((e = readdir(d))) {
+    size_t l = strlen(e->d_name); if (l < 6 || strcmp(e->d_name + l - 5, ".demo")) continue;
+    v = realloc(v, (n + 1) * sizeof *v); v[n] = strndup(e->d_name, l - 5); n++;
+  }
+  closedir(d); if (n) qsort(v, n, sizeof *v, cmp_str);
+  *names = v; return n;
+}
+static int run_self(const char *self, char *const *args) {
+  pid_t p = fork(); if (p < 0) return -1;
+  if (!p) { execv(self, args); _exit(127); }
+  int st; waitpid(p, &st, 0); return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+}
+/* one demo through self: op = render|check|preview; fmt used for render */
+static int one(const char *self, const char *root, const char *op, const char *name, const char *fmt) {
+  char in[1200], out[1200];
+  snprintf(in, sizeof in, "%s/.autodemo/examples/%s.demo", root, name);
+  struct stat st; if (stat(in, &st)) { fprintf(stderr, "autodemo: no demo '%s' (%s)\n", name, in); return 1; }
+  if (!strcmp(op, "render")) {
+    snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s", root, name, fmt);
+    return run_self(self, (char *[]){(char *)self, "render", in, "-o", out, NULL});
+  }
+  return run_self(self, (char *[]){(char *)self, (char *)op, in, NULL});
+}
+static int is_fmt(const char *f) { return !strcmp(f, "webp") || !strcmp(f, "mp4") || !strcmp(f, "webm"); }
+
+static int project_cmd(const char *self, int argc, char **argv) {
+  const char *m = argv[1];
+  char root[1024];
+  if (find_root(root, sizeof root)) { fprintf(stderr, "autodemo: no .autodemo/examples found here or above\n"); return 1; }
+  char **all; int na = list_demos(root, &all);
+  if (!strcmp(m, "list")) { for (int i = 0; i < na; i++) puts(all[i]); return 0; }
+  if (!strcmp(m, "export")) { /* export NAME.fmt ... ; NAME alone = webp */
+    if (argc < 3) return usage();
+    int bad = 0;
+    for (int i = 2; i < argc; i++) {
+      char nm[256]; snprintf(nm, sizeof nm, "%s", argv[i]); const char *fmt = "webp";
+      char *dot = strrchr(nm, '.');
+      if (dot && is_fmt(dot + 1)) { fmt = dot + 1; *dot = 0; }
+      else if (dot && !strcmp(dot, ".demo")) *dot = 0;
+      bad |= one(self, root, "render", nm, fmt) != 0;
+    }
+    return bad;
+  }
+  /* bulk OP [FMT] [NAME...] : OP = export|check|preview|clean|list ; no names = every demo */
+  if (argc < 3) { fprintf(stderr, "usage: autodemo bulk export|check|preview|clean|list [webp|mp4|webm] [NAME...]\n"); return 2; }
+  const char *op = argv[2], *fmt = "webp"; int i = 3;
+  if (!strcmp(op, "export") && i < argc && is_fmt(argv[i])) fmt = argv[i++];
+  char **names = argv + i; int nn = argc - i;
+  if (nn == 0) { names = all; nn = na; }
+  if (!strcmp(op, "list")) { for (int k = 0; k < nn; k++) puts(names[k]); return 0; }
+  int bad = 0, ok = 0, skipped = 0;
+  for (int k = 0; k < nn; k++) {
+    if (!strcmp(op, "clean")) {
+      for (const char **f = (const char *[]){"webp", "mp4", "webm", NULL}; *f; f++) {
+        char p[1300]; snprintf(p, sizeof p, "%s/.autodemo/export/%s.%s", root, names[k], *f);
+        if (!unlink(p)) printf("removed %s\n", p);
+      }
+      continue;
+    }
+    const char *rop = !strcmp(op, "export") ? "render" : op;
+    if (strcmp(rop, "render") && strcmp(rop, "check") && strcmp(rop, "preview")) { fprintf(stderr, "autodemo: unknown bulk op '%s'\n", op); return 2; }
+    printf("== %s %s\n", op, names[k]); fflush(stdout);
+    int rc = one(self, root, rop, names[k], fmt);
+    if (rc == 0) ok++; else if (rc == 3) { skipped++; } else bad++;
+  }
+  if (strcmp(op, "clean")) printf("bulk %s: %d ok, %d failed, %d skipped\n", op, ok, bad, skipped);
+  return bad != 0;
+}
+
 int main(int argc, char **argv) {
+  if (argc >= 2 && (!strcmp(argv[1], "export") || !strcmp(argv[1], "bulk") || !strcmp(argv[1], "list"))) {
+    char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
+    if (l <= 0) { perror("readlink"); return 1; }
+    self[l] = 0; return project_cmd(self, argc, argv);
+  }
   if (argc < 3) return usage();
   const char *mode = argv[1], *in = argv[2], *out = NULL; int q = 0;
   G *g = calloc(1, sizeof *g);
@@ -741,7 +851,7 @@ int main(int argc, char **argv) {
     }
     mkdir_p(out);
   }
-  for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_WINDOW && !backend_available(sc.v[i].a[0])) return 1;
+  for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_WINDOW && !backend_available(sc.v[i].a[0])) return 3;
   if (fonts_init(g->fontpx)) { fprintf(stderr, "autodemo: no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
   layout(g);
   g->preview = preview; g->sleep_scale = preview ? 0.3 : 1.0;

@@ -1,0 +1,18 @@
+# autodemo demoing itself: check + preview of the ls demo
+Size 100x24
+Theme dark
+Title "autodemo"
+Setup printf "PS1='\\$ '\n" > $HOME/.bashrc
+Cd /tmp
+Slide "autodemo" "scripted demos for READMEs" 1500ms
+Run bash -i
+Caption "Validate a script" bottom
+Sleep 500ms
+Send "/data/dev/github/autodemo/autodemo list 2>&1 | head; /data/dev/github/autodemo/autodemo check /data/dev/github/autodemo/.autodemo/examples/ls.demo" 25
+SendKey Enter
+Sleep 2s
+Caption "Bulk-check everything" bottom
+Send "cd /data/dev/github/autodemo && ./autodemo bulk check 2>&1 | tail -8" 25
+SendKey Enter
+Sleep 3s
+Loop

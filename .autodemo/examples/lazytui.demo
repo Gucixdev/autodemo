@@ -1,20 +1,20 @@
 # lazytui gallery (holyc/lazytui) - mouse + keys, private HOME
-size 110x34
-theme dracula
-title "lazytui demo"
-slide "lazytui" "a tiny C TUI toolkit" 1500ms
-run /data/dev/github/holyc/lazytui/examples/demo
-wait 1500ms
-caption "Widgets driven by data + events" bottom
-cursor move 10 5 700ms
-wait 800ms
-key Tab
-wait 1s
-key Tab
-wait 1s
-caption "Mouse works too" top
-cursor move 30 12 600ms
-cursor click
-wait 800ms
-key q
-wait 300ms
+Size 110x34
+Theme dracula
+Title "lazytui demo"
+Slide "lazytui" "a tiny C TUI toolkit" 1500ms
+Run /data/dev/github/holyc/lazytui/examples/demo
+Sleep 1500ms
+Caption "Widgets driven by data + events" bottom
+MouseMove 10 5 700ms
+Sleep 800ms
+SendKey Tab
+Sleep 1s
+SendKey Tab
+Sleep 1s
+Caption "Mouse works too" top
+MouseMove 30 12 600ms
+MouseClick
+Sleep 800ms
+SendKey q
+Sleep 300ms

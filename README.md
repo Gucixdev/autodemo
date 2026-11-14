@@ -24,12 +24,26 @@ non-ASCII fallback, text fonts are DejaVu (override the mono font with `AUTODEMO
 Recording is real time (a 10 s demo takes ~10 s). Per-run temp dirs `/tmp/autodemo-home-*`
 are left behind (tiny); delete them yourself.
 
+## Script syntax (AutoIt-style names, case-insensitive; the old lowercase forms still work)
+
+| New | Old | |
+|---|---|---|
+| `Sleep 500ms` | `wait` | pause |
+| `Send "text" [ms/char]` | `type` | type text |
+| `SendKey Enter Down C-c` | `key` | press keys |
+| `MouseMove x y [ms]` | `cursor move` | pointer to cell |
+| `MouseClick` / `MouseHide` / `MouseShow` | `cursor click/hide/show` | |
+| `Run`, `Caption`, `Slide`, `Transition`, `Window`, `Theme`, `Size`, `Title`, `Setup`, `Cd`, `Env`, `Fps`, `Font`, `Loop` | same | |
+
 ## Usage
 
     make
     ./autodemo check   x.demo
     ./autodemo render  x.demo [-o out.webp|mp4|webm] [-q N] [--snap MS frame.ppm] [-v]
     ./autodemo preview x.demo
+    ./autodemo export  ls.mp4 gtop         # NAME.fmt from .autodemo/examples -> .autodemo/export
+    ./autodemo bulk export mp4 [NAME...]   # every demo (or the listed ones); GUI/web demos are skipped
+    ./autodemo bulk check | preview | clean | list
 
 Layout: demos live in `.autodemo/examples/*.demo`; `render x.demo` with no `-o` (or `-o mp4`) writes
 `.autodemo/export/x.<fmt>` and creates the directories.
