@@ -149,3 +149,8 @@ Backends: the terminal (private tmux) and the gui backend (built-in Wayland comp
 - `src/gui.c` - built-in Wayland compositor. `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
 
 Everything is one translation unit via `#include`, so the Makefile lists the files as dependencies of `src/autodemo.c`.
+
+## Runtime requirements
+- Build: a C compiler, freetype2, libwebp (+ libwebpmux). No Wayland/X libraries: the gui backend speaks the protocol itself.
+- Terminal demos (everything except `Window gui`/`x11`): the `tmux` binary. Without it autodemo stops at the first session with an install hint; graphical demos still work.
+- mp4/webm output: `ffmpeg`. `autodemo gen`/sandbox: Linux user namespaces. `Window x11`: `Xwayland`.

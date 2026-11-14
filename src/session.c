@@ -1,7 +1,16 @@
 /* session.c - start the program in the private tmux (or the gui backend). */
 /* ---- session ---- */
+/* the terminal backend needs the tmux binary; say so clearly instead of failing on the first session */
+static int tmux_present(void) {
+  char *out = NULL; char *const argv[] = {"tmux", "-V", NULL};
+  int rc = run_argv(argv, &out); free(out);
+  if (rc) say(LV_ERR, "tmux not found (the terminal backend runs the program inside a private tmux): install it (pacman -S tmux / apt install tmux / dnf install tmux), or use `Window gui` for a graphical program\n");
+  return rc == 0;
+}
 static int start_session(G *g, const char *cmd) {
   char *v[3];
+  static int checked;
+  if (!checked) { if (!tmux_present()) return -1; checked = 1; }
   if (g->have_session) TMUX("kill-server");
   char geom_x[16], geom_y[16]; snprintf(geom_x, 16, "%d", g->cols); snprintf(geom_y, 16, "%d", g->rows);
   char full[4096]; int n = snprintf(full, sizeof full, "exec env");
