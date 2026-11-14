@@ -3,7 +3,7 @@ Size 110x34
 Theme dracula
 Title "lazytui demo"
 Slide "lazytui" "a tiny C TUI toolkit" 1500ms
-Run /data/dev/github/holyc/lazytui/examples/demo
+Run $AUTODEMO_ROOT/bin/demo
 Sleep 1500ms
 Caption "Widgets driven by data + events" bottom
 MouseMove 10 5 700ms
