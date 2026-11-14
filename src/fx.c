@@ -18,7 +18,7 @@ enum { FX_NONE, FX_FADE, FX_SLIDE_L, FX_SLIDE_R, FX_SLIDE_U, FX_SLIDE_D, FX_ZOOM
 
 static const struct { const char *name; int id; } FX_NAMES[] = {
   {"none", FX_NONE}, {"fade", FX_FADE}, {"slide", FX_SLIDE_L}, {"slide-left", FX_SLIDE_L}, {"slide-right", FX_SLIDE_R},
-  {"slide-up", FX_SLIDE_U}, {"slide-down", FX_SLIDE_D}, {"zoom", FX_ZOOM}, {"zoom-out", FX_ZOOM_OUT}, {"wipe", FX_WIPE}, {0, 0}};
+  {"slide-up", FX_SLIDE_U}, {"slide-down", FX_SLIDE_D}, {"zoom", FX_ZOOM}, {"zoom-in", FX_ZOOM}, {"zoom-out", FX_ZOOM_OUT}, {"slide-in", FX_SLIDE_L}, {"slide-out", FX_SLIDE_R}, {"fade-in", FX_FADE}, {"fade-out", FX_FADE}, {"wipe", FX_WIPE}, {0, 0}};
 
 /* effect id for a name, -1 if there is no such effect */
 static int fx_parse(const char *name) {
@@ -26,7 +26,7 @@ static int fx_parse(const char *name) {
   return -1;
 }
 
-static const char *fx_list(void) { return "none|fade|slide|slide-left|slide-right|slide-up|slide-down|zoom|zoom-out|wipe"; }
+static const char *fx_list(void) { return "none|fade|slide|slide-left|slide-right|slide-up|slide-down|zoom|zoom-in|zoom-out|slide-in|slide-out|wipe"; }
 
 static inline uint8_t fx_mix(uint8_t a, uint8_t b, int k256) { return (uint8_t)((a * (256 - k256) + b * k256) >> 8); }
 

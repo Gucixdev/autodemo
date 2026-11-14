@@ -12,3 +12,4 @@ Sleep 500ms
 Send "// typed by autodemo" 60
 SendKey Escape
 Sleep 1500ms
+Loop

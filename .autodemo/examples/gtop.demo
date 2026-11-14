@@ -11,3 +11,4 @@ SendKey Down Down Down
 Sleep 1s
 SendKey q
 Sleep 300ms
+Loop

@@ -4,6 +4,8 @@ Theme dark
 Title "autodemo"
 Setup printf "PS1='\\$ '\n" > $HOME/.bashrc
 Cd /tmp
+Transition in slide-in 400ms
+Transition out wipe 400ms
 Slide "autodemo" "scripted demos for READMEs" 1500ms
 Run bash -i
 Caption "Validate a script" bottom

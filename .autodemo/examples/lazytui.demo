@@ -18,3 +18,4 @@ MouseClick
 Sleep 800ms
 SendKey q
 Sleep 300ms
+Loop

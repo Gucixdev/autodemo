@@ -5,8 +5,62 @@
 #define CFG_TRANSITION     "fade"  /* default effect between a slide and the terminal (see fx.c for the names) */
 #define CFG_TRANSITION_MS  300     /* its length */
 #define CFG_FX_STEP_MS     40      /* one effect frame (25 fps); smaller = smoother and a bigger file */
+#define CFG_SPEED          2.0     /* playback speed of typing, mouse, sleeps and slides; `Speed N` in a script or --speed N changes it */
 #define CFG_SLIDE_MS       2000    /* how long a slide stays when the script gives no time */
 #define CFG_ZOOM_AMOUNT    0.25    /* zoom effects: how far the picture scales (0.25 = 25 %) */
 #define CFG_WIPE_SOFT      0.12    /* wipe effect: width of the soft edge, as a fraction of the picture */
+
+
+/* ---- window defaults (a script's Size/Font/Theme/Fps lines override them) ---- */
+#define CFG_COLS           100     /* terminal width in cells */
+#define CFG_ROWS           30      /* terminal height in cells */
+#define CFG_FPS            10      /* polling rate of the terminal while recording */
+#define CFG_FONT_PX        15      /* terminal font size in pixels */
+#define CFG_THEME          "dark"  /* default theme: a name from THEMES below */
+#define CFG_TYPE_MS        55      /* Send: ms per character (jittered +-30 %), before Speed */
+#define CFG_MOVE_MS        500     /* MouseMove when the script gives no time */
+
+/* ---- fonts: first file that exists wins; AUTODEMO_FONT=/x.ttf overrides the terminal font ---- */
+#define CFG_FONT_MONO      {"/usr/share/fonts/TTF/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/liberation/LiberationMono-Regular.ttf", 0}
+#define CFG_FONT_MONO_BOLD {"/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/liberation/LiberationMono-Bold.ttf", 0}
+#define CFG_FONT_SANS      {"/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", 0}
+#define CFG_FONT_SANS_BOLD {"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/liberation/LiberationSans-Bold.ttf", 0}
+#define CFG_TITLE_PX       13      /* window title font size */
+#define CFG_TITLE_ALPHA    200     /* window title opacity 0..255 */
+#define CFG_CAPTION_PX     20      /* caption font size */
+
+/* ---- window chrome (pixels) ---- */
+#define CFG_MARGIN         14      /* space around the window */
+#define CFG_TITLEBAR_H     30
+#define CFG_PADDING        8       /* space between the title bar / border and the terminal text */
+#define CFG_CORNER_R       8
+#define CFG_SHADOW_DX      4
+#define CFG_SHADOW_DY      8
+#define CFG_SHADOW_COLOR   0x000000
+#define CFG_SHADOW_ALPHA   60
+#define CFG_DOT_R          6       /* traffic-light dots */
+#define CFG_DOT_CLOSE      0xff5f57
+#define CFG_DOT_MIN        0xfebc2e
+#define CFG_DOT_MAX        0x28c840
+
+/* ---- overlays ---- */
+#define CFG_POINTER_FILL    0xffffff   /* mouse pointer body */
+#define CFG_POINTER_OUTLINE 0x000000
+#define CFG_RIPPLE_COLOR    0x58a6ff   /* click ripple */
+#define CFG_CAPTION_BG      0x000000
+#define CFG_CAPTION_BG_ALPHA 205
+#define CFG_CAPTION_FG      0xffffff
+#define CFG_SLIDE_GRADIENT  24         /* slide background: how much lighter the bottom gets (0 = flat) */
+#define CFG_SLIDE_ACCENT    4          /* slide underline colour = this palette index of the theme (4 = blue) */
+
+/* ---- themes: name, 16-colour ANSI palette (0..7 normal, 8..15 bright), default text, terminal background,
+ *      outer background around the window, title-bar colour. Add your own line and use it with `Theme NAME`. ---- */
+typedef struct { const char *name; uint32_t pal[16], fg, bg, outer, bar; } Theme;
+static const Theme THEMES[] = {
+  {"dark", {0x1d1f21,0xcc6666,0xb5bd68,0xf0c674,0x81a2be,0xb294bb,0x8abeb7,0xc5c8c6,0x969896,0xde935f,0xb5bd68,0xf0c674,0x81a2be,0xb294bb,0x8abeb7,0xffffff}, 0xc5c8c6, 0x1d1f21, 0x2b2f3a, 0x30343f},
+  {"light",{0x000000,0xc82829,0x718c00,0xeab700,0x4271ae,0x8959a8,0x3e999f,0xd6d6d6,0x4d4d4c,0xf5871f,0x718c00,0xeab700,0x4271ae,0x8959a8,0x3e999f,0xffffff}, 0x4d4d4c, 0xfafafa, 0xd8dce5, 0xe6e8ee},
+  {"dracula",{0x21222c,0xff5555,0x50fa7b,0xf1fa8c,0xbd93f9,0xff79c6,0x8be9fd,0xf8f8f2,0x6272a4,0xff6e6e,0x69ff94,0xffffa5,0xd6acff,0xff92df,0xa4ffff,0xffffff}, 0xf8f8f2, 0x282a36, 0x1b1c26, 0x343746},
+};
+#define NTHEMES ((int)(sizeof THEMES / sizeof THEMES[0]))
 
 #endif

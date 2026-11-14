@@ -25,13 +25,13 @@
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"type",C_TYPE,1,2},{"key",C_KEY,1,5},{"wait",C_WAIT,1,1},
-  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,2},
+  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
   {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
@@ -150,10 +150,13 @@ static int parse_script(const char *path, Script *sc) {
       break;
     case C_WAIT: if (dur_ms(c.a[0], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[0]); ok = 0; } break;
     case C_SLIDE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[2]); ok = 0; } break;
-    case C_TRANS:
-      if (fx_parse(c.a[0]) < 0) { fprintf(stderr, "%s:%d: transition %s\n", path, line, fx_list()); ok = 0; }
-      if (c.n == 2 && dur_ms(c.a[1], &ms)) { fprintf(stderr, "%s:%d: bad duration\n", path, line); ok = 0; }
-      break;
+    case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { fprintf(stderr, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
+    case C_TRANS: {
+      int k = (!strcmp(c.a[0], "in") || !strcmp(c.a[0], "out") || !strcmp(c.a[0], "both")) ? 1 : 0;
+      if (c.n <= k) { fprintf(stderr, "%s:%d: Transition [in|out|both] EFFECT [ms]\n", path, line); ok = 0; }
+      else if (fx_parse(c.a[k]) < 0) { fprintf(stderr, "%s:%d: transition effect: %s\n", path, line, fx_list()); ok = 0; }
+      else if (c.n > k + 1 && dur_ms(c.a[k + 1], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[k + 1]); ok = 0; }
+      break; }
     case C_CAPTION:
       if (c.n >= 2 && strcmp(c.a[1], "top") && strcmp(c.a[1], "bottom")) { fprintf(stderr, "%s:%d: caption position top|bottom\n", path, line); ok = 0; }
       break;
@@ -162,7 +165,8 @@ static int parse_script(const char *path, Script *sc) {
       if (strcmp(c.a[0], "tui") && strcmp(c.a[0], "gui") && strcmp(c.a[0], "web")) { fprintf(stderr, "%s:%d: window tui|gui|web\n", path, line); ok = 0; }
       break;
     case C_THEME:
-      if (strcmp(c.a[0], "dark") && strcmp(c.a[0], "light") && strcmp(c.a[0], "dracula")) { fprintf(stderr, "%s:%d: theme dark|light|dracula\n", path, line); ok = 0; }
+      int tk = 0; for (int q = 0; q < NTHEMES; q++) if (!strcmp(c.a[0], THEMES[q].name)) tk = 1;
+      if (!tk) { fprintf(stderr, "%s:%d: theme ", path, line); for (int q = 0; q < NTHEMES; q++) fprintf(stderr, "%s%s", q ? "|" : "", THEMES[q].name); fprintf(stderr, " (edit src/config.h to add one)\n"); ok = 0; }
       break;
     case C_FPS: if (atoi(c.a[0]) < 1 || atoi(c.a[0]) > 30) { fprintf(stderr, "%s:%d: fps 1..30\n", path, line); ok = 0; } break;
     case C_FONT: if (atoi(c.a[0]) < 8 || atoi(c.a[0]) > 40) { fprintf(stderr, "%s:%d: font px 8..40\n", path, line); ok = 0; } break;
@@ -216,10 +220,7 @@ static FT_Face load_face(const char *const *paths) {
   return NULL;
 }
 static int fonts_init(int px) {
-  static const char *m[] = {"/usr/share/fonts/TTF/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/liberation/LiberationMono-Regular.ttf", 0};
-  static const char *mb[] = {"/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/liberation/LiberationMono-Bold.ttf", 0};
-  static const char *s[] = {"/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", 0};
-  static const char *sb[] = {"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/liberation/LiberationSans-Bold.ttf", 0};
+  static const char *m[] = CFG_FONT_MONO, *mb[] = CFG_FONT_MONO_BOLD, *s[] = CFG_FONT_SANS, *sb[] = CFG_FONT_SANS_BOLD;
   if (FT_Init_FreeType(&ft)) return -1;
   const char *ov = getenv("AUTODEMO_FONT");
   const char *ovl[] = {ov, 0};
@@ -274,12 +275,6 @@ static int draw_text(Img *im, FT_Face f, int px, int x, int bl, const char *s, u
 }
 
 /* ------------------------------------------------------------ themes ---- */
-typedef struct { const char *name; uint32_t pal[16], fg, bg, outer, bar; } Theme;
-static const Theme THEMES[] = {
-  {"dark", {0x1d1f21,0xcc6666,0xb5bd68,0xf0c674,0x81a2be,0xb294bb,0x8abeb7,0xc5c8c6,0x969896,0xde935f,0xb5bd68,0xf0c674,0x81a2be,0xb294bb,0x8abeb7,0xffffff}, 0xc5c8c6, 0x1d1f21, 0x2b2f3a, 0x30343f},
-  {"light",{0x000000,0xc82829,0x718c00,0xeab700,0x4271ae,0x8959a8,0x3e999f,0xd6d6d6,0x4d4d4c,0xf5871f,0x718c00,0xeab700,0x4271ae,0x8959a8,0x3e999f,0xffffff}, 0x4d4d4c, 0xfafafa, 0xd8dce5, 0xe6e8ee},
-  {"dracula",{0x21222c,0xff5555,0x50fa7b,0xf1fa8c,0xbd93f9,0xff79c6,0x8be9fd,0xf8f8f2,0x6272a4,0xff6e6e,0x69ff94,0xffffa5,0xd6acff,0xff92df,0xa4ffff,0xffffff}, 0xf8f8f2, 0x282a36, 0x1b1c26, 0x343746},
-};
 
 /* ------------------------------------------------------------- grid ---- */
 typedef struct { uint32_t cp, fg, bg; uint8_t at; } Cell; /* at: 1 bold 2 dim 4 underline 8 reverse */
@@ -382,7 +377,7 @@ typedef struct {
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
-  char trans[16]; int trans_ms;
+  char trans[2][16]; int trans_ms[2]; double speed;
   long T; double sleep_scale; int preview;
   /* sinks */
   WebPAnimEncoder *enc; WebPAnimEncoderOptions eopt; WebPConfig wcfg; int lossy;
@@ -429,7 +424,7 @@ static void put(G *g, const Img *im, int dur) {
 /* ---- rendering ---- */
 static void layout(G *g) {
   const Theme *t = &THEMES[g->theme];
-  g->M = 14; g->TB = 30; g->PAD = 8;
+  g->M = CFG_MARGIN; g->TB = CFG_TITLEBAR_H; g->PAD = CFG_PADDING;
   g->W = g->cols * cw + 2 * g->PAD + 2 * g->M; g->H = g->rows * ch + 2 * g->PAD + g->TB + 2 * g->M;
   g->W += g->W & 1; g->H += g->H & 1;
   g->tx0 = g->M + g->PAD; g->ty0 = g->M + g->TB + g->PAD;
@@ -439,15 +434,15 @@ static void render_layer(G *g) {
   const Theme *t = &THEMES[g->theme]; Img *L = &g->layer;
   img_fill(L, 0, 0, L->w, L->h, t->outer, 255);
   int ww = L->w - 2 * g->M, wh = L->h - 2 * g->M;
-  img_fill(L, g->M + 4, g->M + 8, ww, wh, 0x000000, 60); /* shadow */
-  img_rrect(L, g->M, g->M, ww, wh, 8, t->bg, 255);
-  img_rrect(L, g->M, g->M, ww, g->TB, 8, t->bar, 255);
-  img_fill(L, g->M, g->M + g->TB - 8, ww, 8, t->bar, 255);
-  img_disc(L, g->M + 16, g->M + g->TB / 2, 6, 0xff5f57, 255, 0);
-  img_disc(L, g->M + 36, g->M + g->TB / 2, 6, 0xfebc2e, 255, 0);
-  img_disc(L, g->M + 56, g->M + g->TB / 2, 6, 0x28c840, 255, 0);
-  int tw = text_width(fsans, 13, g->title);
-  draw_text(L, fsans, 13, g->M + (ww - tw) / 2, g->M + g->TB / 2 + 5, g->title, t->fg, 200);
+  img_fill(L, g->M + CFG_SHADOW_DX, g->M + CFG_SHADOW_DY, ww, wh, CFG_SHADOW_COLOR, CFG_SHADOW_ALPHA);
+  img_rrect(L, g->M, g->M, ww, wh, CFG_CORNER_R, t->bg, 255);
+  img_rrect(L, g->M, g->M, ww, g->TB, CFG_CORNER_R, t->bar, 255);
+  img_fill(L, g->M, g->M + g->TB - CFG_CORNER_R, ww, CFG_CORNER_R, t->bar, 255);
+  img_disc(L, g->M + 16, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_CLOSE, 255, 0);
+  img_disc(L, g->M + 36, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_MIN, 255, 0);
+  img_disc(L, g->M + 56, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_MAX, 255, 0);
+  int tw = text_width(fsans, CFG_TITLE_PX, g->title);
+  draw_text(L, fsans, CFG_TITLE_PX, g->M + (ww - tw) / 2, g->M + g->TB / 2 + CFG_TITLE_PX * 2 / 5, g->title, t->fg, CFG_TITLE_ALPHA);
   if (!g->have_session) return;
   Grid *gr = &g->gr;
   for (int r = 0; r < gr->rows; r++) for (int c = 0; c < gr->cols; c++) {
@@ -469,18 +464,18 @@ static void compose(G *g) {
   if (g->ptr_on) {
     static const char *arrow[] = {"X","XX","XWX","XWWX","XWWWX","XWWWWX","XWWWWWX","XWWWWWWX","XWWWWWWWX","XWWWWWWWWX","XWWWWWXXXXX","XWWXWWX","XWX XWWX","XX  XWWX","X    XWWX","     XWWX","      XX",0};
     int ox = (int)g->px, oy = (int)g->py;
-    if (g->ripple) img_disc(F, ox, oy, 6 + g->ripple * 7, 0x58a6ff, 200 - g->ripple * 40, 2.5);
+    if (g->ripple) img_disc(F, ox, oy, 6 + g->ripple * 7, CFG_RIPPLE_COLOR, 200 - g->ripple * 40, 2.5);
     for (int j = 0; arrow[j]; j++) for (int i = 0; arrow[j][i]; i++) {
       char c = arrow[j][i]; if (c == ' ') continue;
-      img_fill(F, ox + i * 2, oy + j * 2, 2, 2, c == 'X' ? 0x000000 : 0xffffff, 255);
+      img_fill(F, ox + i * 2, oy + j * 2, 2, 2, c == 'X' ? CFG_POINTER_OUTLINE : CFG_POINTER_FILL, 255);
     }
   }
   if (g->caption[0]) {
-    int px = 20, tw = text_width(fsansb, px, g->caption), bw = tw + 36, bh = px + 22;
+    int px = CFG_CAPTION_PX, tw = text_width(fsansb, px, g->caption), bw = tw + 36, bh = px + 22;
     if (bw > F->w - 20) bw = F->w - 20;
     int bx = (F->w - bw) / 2, by = g->cap_top ? g->M + g->TB + 14 : F->h - g->M - bh - 14;
-    img_rrect(F, bx, by, bw, bh, 10, 0x000000, 205);
-    draw_text(F, fsansb, px, bx + (bw - tw) / 2, by + bh / 2 + px / 3, g->caption, 0xffffff, 255);
+    img_rrect(F, bx, by, bw, bh, 10, CFG_CAPTION_BG, CFG_CAPTION_BG_ALPHA);
+    draw_text(F, fsansb, px, bx + (bw - tw) / 2, by + bh / 2 + px / 3, g->caption, CFG_CAPTION_FG, 255);
   }
 }
 static void present_dirty(G *g, int dur) {
@@ -555,10 +550,13 @@ static void wait_ms(G *g, int ms) {
 }
 
 /* ---- transitions ---- */
-static void transition(G *g, const Img *A, const Img *B) {
-  int fx = fx_parse(g->trans);
-  if (fx <= FX_NONE || g->trans_ms <= 0) { put(g, B, 0); return; }
-  int n = g->trans_ms / CFG_FX_STEP_MS; if (n < 1) n = 1;
+static int sp(G *g, int ms) { if (ms <= 0) return 0; int v = (int)(ms / g->speed + 0.5); return v < 1 ? 1 : v; }
+
+/* which: 0 = entering a slide, 1 = leaving it */
+static void transition(G *g, const Img *A, const Img *B, int which) {
+  int fx = fx_parse(g->trans[which]), tms = sp(g, g->trans_ms[which]);
+  if (fx <= FX_NONE || tms <= 0) { put(g, B, 0); return; }
+  int n = tms / CFG_FX_STEP_MS; if (n < 1) n = 1;
   Img M = img_new(A->w, A->h);
   for (int i = 1; i <= n; i++) {
     double u = (double)i / n; u = u * u * (3 - 2 * u);
@@ -570,7 +568,7 @@ static void transition(G *g, const Img *A, const Img *B) {
 static void render_slide(G *g, Img *S, const char *title, const char *sub) {
   const Theme *t = &THEMES[g->theme];
   for (int y = 0; y < S->h; y++) { /* subtle vertical gradient */
-    uint32_t c = t->bg; int k = y * 24 / S->h;
+    uint32_t c = t->bg; int k = y * CFG_SLIDE_GRADIENT / S->h;
     int r = (c >> 16 & 255) + k / 2, gg = (c >> 8 & 255) + k / 2, b = (c & 255) + k; if (r > 255) r = 255; if (gg > 255) gg = 255; if (b > 255) b = 255;
     img_fill(S, 0, y, S->w, 1, r << 16 | gg << 8 | b, 255);
   }
@@ -579,7 +577,7 @@ static void render_slide(G *g, Img *S, const char *title, const char *sub) {
   int tw = text_width(fsansb, tp, title);
   int cy = S->h / 2 - (sub && *sub ? tp / 2 : 0);
   draw_text(S, fsansb, tp, (S->w - tw) / 2, cy + tp / 3, title, t->fg, 255);
-  img_fill(S, S->w / 2 - 30, cy + tp, 60, 3, t->pal[4], 255);
+  img_fill(S, S->w / 2 - 30, cy + tp, 60, 3, t->pal[CFG_SLIDE_ACCENT], 255);
   if (sub && *sub) {
     int sp = tp / 2 + 2, sw = text_width(fsans, sp, sub);
     draw_text(S, fsans, sp, (S->w - sw) / 2, cy + tp + sp + 20, sub, t->fg, 190);
@@ -687,9 +685,9 @@ static int execute(G *g, Script *sc) {
       char *argv[] = {"sh", "-c", c->a[0], NULL};
       if (run_argv(argv, NULL)) { fprintf(stderr, "line %d: setup command failed\n", c->line); return -1; }
       break; }
-    case C_TYPE: g->ninputs++; if (send_text(g, c->a[0], c->n > 1 ? atoi(c->a[1]) : 55)) return -1; break;
+    case C_TYPE: g->ninputs++; if (send_text(g, c->a[0], sp(g, c->n > 1 ? atoi(c->a[1]) : CFG_TYPE_MS))) return -1; break;
     case C_KEY: g->ninputs++; for (int k = 0; k < c->n; k++) if (send_key(g, c->a[k])) return -1; break;
-    case C_WAIT: dur_ms(c->a[0], &ms); wait_ms(g, ms); if (g->preview) dump_ascii(g, c); break;
+    case C_WAIT: dur_ms(c->a[0], &ms); wait_ms(g, sp(g, ms)); if (g->preview) dump_ascii(g, c); break;
     case C_CAPTION:
       snprintf(g->caption, sizeof g->caption, "%s", !strcmp(c->a[0], "off") ? "" : c->a[0]);
       g->cap_top = c->n > 1 && !strcmp(c->a[1], "top"); g->dirty = 1; tick(g, 150); break;
@@ -698,13 +696,19 @@ static int execute(G *g, Script *sc) {
       if (g->have_session) capture(g);
       compose(g); Img A = img_new(g->W, g->H); memcpy(A.p, g->frame.p, (size_t)g->W * g->H * 4);
       Img S = img_new(g->W, g->H); render_slide(g, &S, c->a[0], c->n > 1 ? c->a[1] : "");
-      transition(g, &A, &S); put(g, &S, ms);
+      transition(g, &A, &S, 0); put(g, &S, sp(g, ms));
       if (g->have_session) { capture(g); render_layer(g); }
-      compose(g); transition(g, &S, &g->frame); g->dirty = 1;
+      compose(g); transition(g, &S, &g->frame, 1); g->dirty = 1;
       if (g->preview) dump_ascii(g, c);
       free(A.p); free(S.p); break; }
-    case C_TRANS: snprintf(g->trans, sizeof g->trans, "%s", c->a[0]); g->trans_ms = CFG_TRANSITION_MS; if (c->n == 2) dur_ms(c->a[1], &g->trans_ms); break;
-    case C_CMOVE: ms = 500; if (c->n == 3) dur_ms(c->a[2], &ms); pointer_move(g, atof(c->a[0]), atof(c->a[1]), ms); break;
+    case C_SPEED: g->speed = atof(c->a[0]); break;
+    case C_TRANS: {
+      int k = (!strcmp(c->a[0], "in") || !strcmp(c->a[0], "out") || !strcmp(c->a[0], "both")) ? 1 : 0;
+      int lo = !strcmp(c->a[0], "out") ? 1 : 0, hi = !strcmp(c->a[0], "in") ? 0 : 1; /* in: [0,0]  out: [1,1]  both: [0,1] */
+      int tms = CFG_TRANSITION_MS; if (c->n > k + 1) dur_ms(c->a[k + 1], &tms);
+      for (int w = lo; w <= hi; w++) { snprintf(g->trans[w], sizeof g->trans[w], "%s", c->a[k]); g->trans_ms[w] = tms; }
+      break; }
+    case C_CMOVE: ms = CFG_MOVE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); pointer_move(g, atof(c->a[0]), atof(c->a[1]), sp(g, ms)); break;
     case C_CCLICK: if (!g->ptr_on) { fprintf(stderr, "line %d: click before cursor move\n", c->line); return -1; } pointer_click(g); break;
     case C_CHIDE: g->ptr_on = 0; g->dirty = 1; tick(g, 50); break;
     case C_CSHOW: g->ptr_on = 1; g->dirty = 1; tick(g, 50); break;
@@ -715,13 +719,15 @@ static int execute(G *g, Script *sc) {
 }
 
 static void apply_header(G *g, Script *sc) {
-  g->cols = 100; g->rows = 30; g->fps = 10; g->fontpx = 15; g->theme = 0; g->backend = 0;
-  strcpy(g->trans, CFG_TRANSITION); g->trans_ms = CFG_TRANSITION_MS;
+  g->cols = CFG_COLS; g->rows = CFG_ROWS; g->fps = CFG_FPS; g->fontpx = CFG_FONT_PX; g->theme = 0; g->backend = 0;
+  for (int k = 0; k < NTHEMES; k++) if (!strcmp(THEMES[k].name, CFG_THEME)) g->theme = k;
+  g->speed = CFG_SPEED;
+  for (int w = 0; w < 2; w++) { strcpy(g->trans[w], CFG_TRANSITION); g->trans_ms[w] = CFG_TRANSITION_MS; }
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];
     switch (c->op) {
     case C_SIZE: sscanf(c->a[0], "%dx%d", &g->cols, &g->rows); break;
-    case C_THEME: for (int k = 0; k < 3; k++) if (!strcmp(c->a[0], THEMES[k].name)) g->theme = k; break;
+    case C_THEME: for (int k = 0; k < NTHEMES; k++) if (!strcmp(c->a[0], THEMES[k].name)) g->theme = k; break;
     case C_FPS: g->fps = atoi(c->a[0]); break;
     case C_FONT: g->fontpx = atoi(c->a[0]); break;
     case C_LOOP: g->loop = 1; break;
@@ -742,12 +748,12 @@ static long estimate_ms(Script *sc) {
     case C_SLIDE: ms = CFG_SLIDE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms + 600; break;
     case C_TYPE: t += (long)strlen(c->a[0]) * (c->n > 1 ? atoi(c->a[1]) : 55); break;
     case C_KEY: t += 120 * c->n; break;
-    case C_CMOVE: ms = 500; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms; break;
+    case C_CMOVE: ms = CFG_MOVE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms; break;
     case C_CCLICK: t += 320; break;
     case C_RUN: t += 200; break;
     }
   }
-  return t;
+  return (long)(t / CFG_SPEED);
 }
 
 static int usage(void) {
@@ -852,6 +858,8 @@ static int project_cmd(const char *self, int argc, char **argv) {
   return bad != 0;
 }
 
+static double cli_speed;
+
 int main(int argc, char **argv) {
   if (argc >= 2 && (!strcmp(argv[1], "export") || !strcmp(argv[1], "bulk") || !strcmp(argv[1], "list"))) {
     char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
@@ -867,12 +875,14 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "-v")) verbose = 1;
     else if (!strcmp(argv[i], "--force")) g->force = 1;
     else if (!strcmp(argv[i], "--realtime")) g->realtime = 1;
+    else if (!strcmp(argv[i], "--speed") && i + 1 < argc) cli_speed = atof(argv[++i]);
     else if (!strcmp(argv[i], "--snap") && i + 2 < argc && g->nsnap < 8) { g->snap[g->nsnap].ms = atol(argv[++i]); g->snap[g->nsnap++].file = argv[++i]; }
     else return usage();
   }
   Script sc = {0};
   if (parse_script(in, &sc)) return 1;
   apply_header(g, &sc);
+  if (cli_speed > 0) g->speed = cli_speed;
   if (!strcmp(mode, "check")) {
     printf("%s: ok, %d commands, %dx%d cells, ~%.1fs\n", in, sc.n, g->cols, g->rows, estimate_ms(&sc) / 1000.0);
     return 0;
@@ -967,6 +977,12 @@ int main(int argc, char **argv) {
   if (render) {
     FILE *f = fopen(out, "rb"); long sz = 0; if (f) { fseek(f, 0, SEEK_END); sz = ftell(f); fclose(f); }
     printf("%s: %dx%d, %.1fs, %ld unique frames, %.1f KiB\n", out, g->W, g->H, g->T / 1000.0, g->nframes, sz / 1024.0);
+    /* GitHub check: README media is inlined up to ~10 MB; big files are slow to load and bloat the repo */
+    double mib = sz / 1048576.0;
+    if (mib > 10.0 && !g->force) { fprintf(stderr, "autodemo: GITHUB: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }
+    if (mib > 10.0) fprintf(stderr, "autodemo: GITHUB: %.1f MiB is over the 10 MiB README media limit\n", mib);
+    else if (mib > 5.0) fprintf(stderr, "autodemo: github: warning, %.1f MiB is heavy for a README (limit 10 MiB); consider -q 60 or mp4/webm\n", mib);
+    else if (mib > 2.0) fprintf(stderr, "autodemo: github: note, %.1f MiB (fine, but slow on mobile)\n", mib);
   }
   return 0;
 }

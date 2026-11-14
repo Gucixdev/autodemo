@@ -33,7 +33,22 @@ are left behind (tiny); delete them yourself.
 | `SendKey Enter Down C-c` | `key` | press keys |
 | `MouseMove x y [ms]` | `cursor move` | pointer to cell |
 | `MouseClick` / `MouseHide` / `MouseShow` | `cursor click/hide/show` | |
+| `Transition [in\|out\|both] EFFECT [ms]` | | effect when a slide appears (`in`) / goes away (`out`); default both. Effects: none fade zoom zoom-in zoom-out slide slide-in slide-out slide-left slide-right slide-up slide-down wipe |
+| `Speed N` | | playback speed of typing, mouse, sleeps and slides (default 2, `--speed N` on the command line) |
 | `Run`, `Caption`, `Slide`, `Transition`, `Window`, `Theme`, `Size`, `Title`, `Setup`, `Cd`, `Env`, `Fps`, `Font`, `Loop` | same | |
+
+## config.h
+
+`src/config.h` holds every default, rebuild after editing: speed, transition, window size/font/fps, font file lists,
+window chrome (margin, title bar, corner radius, shadow, traffic-light colours), pointer/ripple/caption colours,
+slide look, and the **themes** (16-colour palette + text/background/outer/title-bar colours; add a line and use it
+with `Theme NAME`). A script overrides size, theme, font, fps, speed and transitions per demo.
+
+## Checks
+
+`render` refuses to write a bad demo (exit 4, `--force` keeps it): program died, empty screen, inputs that changed
+nothing. Warnings for sparse or static screens. GitHub check on the output: over 10 MiB is refused (exit 5, GitHub
+does not show README media that big), over 5 MiB warns. Live UIs (gtop, frost) are better as a short `Loop`.
 
 ## Usage
 
