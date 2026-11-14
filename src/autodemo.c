@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 #include <limits.h>
 #include <strings.h>
 #include <dirent.h>
@@ -22,16 +23,31 @@
 #include <webp/mux.h>
 #include "fx.c"
 
+
+/* ------------------------------------------------------------ output ---- */
+/* one place for messages: red error, yellow warning, green ok, dim note; plain text when not a terminal (or NO_COLOR) */
+enum { LV_ERR, LV_WARN, LV_OK, LV_NOTE };
+static int color_on = -1;
+static void say(int lv, const char *fmt, ...) {
+  if (color_on < 0) color_on = (isatty(2) || getenv("AUTODEMO_COLOR")) && !getenv("NO_COLOR");
+  static const char *col[] = {"\033[1;31m", "\033[1;33m", "\033[32m", "\033[2m"};
+  static const char *sym[] = {"error", "warn ", "ok   ", "note "};
+  char m[2048]; va_list ap; va_start(ap, fmt); vsnprintf(m, sizeof m, fmt, ap); va_end(ap);
+  size_t l = strlen(m); while (l && m[l - 1] == '\n') m[--l] = 0;
+  if (color_on) fprintf(stderr, "%s%s\033[0m %s%s\033[0m\n", col[lv], sym[lv], lv == LV_ERR ? "\033[31m" : lv == LV_WARN ? "\033[33m" : "", m);
+  else fprintf(stderr, "%s %s\n", sym[lv], m);
+}
+
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_TYPING, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_PSCROLL, C_MSCROLL, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"type",C_TYPE,1,2},{"key",C_KEY,1,5},{"wait",C_WAIT,1,1},
-  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"typing",C_TYPING,1,1},
+  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,2},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
   {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
@@ -102,7 +118,7 @@ static void alias_cmd(char **tok, int *n) {
 /* returns 0 ok; on error prints file:line and returns -1 (continues to report all) */
 static int parse_script(const char *path, Script *sc) {
   FILE *f = fopen(path, "r");
-  if (!f) { fprintf(stderr, "autodemo: %s: %s\n", path, strerror(errno)); return -1; }
+  if (!f) { say(LV_ERR, "%s: %s\n", path, strerror(errno)); return -1; }
   char buf[4096]; int line = 0, bad = 0, seen_run = 0;
   while (fgets(buf, sizeof buf, f)) {
     line++;
@@ -119,7 +135,7 @@ static int parse_script(const char *path, Script *sc) {
     }
     n = tokenize(buf, tok, 12, err);
     tokenized:
-    if (n < 0) { fprintf(stderr, "%s:%d: %s\n", path, line, err); bad = 1; continue; }
+    if (n < 0) { say(LV_ERR, "%s:%d: %s\n", path, line, err); bad = 1; continue; }
     if (!n) continue;
     alias_cmd(tok, &n);
     Cmd c = {.line = line}; int op = -1, argi = 1;
@@ -128,15 +144,15 @@ static int parse_script(const char *path, Script *sc) {
       op = !strcmp(sub, "move") ? C_CMOVE : !strcmp(sub, "click") ? C_CCLICK :
            !strcmp(sub, "hide") ? C_CHIDE : !strcmp(sub, "show") ? C_CSHOW : -1;
       argi = 2;
-      if (op < 0) { fprintf(stderr, "%s:%d: cursor needs move|click|hide|show\n", path, line); bad = 1; continue; }
+      if (op < 0) { say(LV_ERR, "%s:%d: cursor needs move|click|hide|show\n", path, line); bad = 1; continue; }
       int need = op == C_CMOVE ? 2 : 0, nn = n - 2;
-      if (nn < need || nn > need + 1) { fprintf(stderr, "%s:%d: cursor %s: wrong argument count\n", path, line, sub); bad = 1; continue; }
+      if (nn < need || nn > need + 1) { say(LV_ERR, "%s:%d: cursor %s: wrong argument count\n", path, line, sub); bad = 1; continue; }
     } else {
       int k;
       for (k = 0; SPEC[k].name; k++) if (!strcmp(tok[0], SPEC[k].name)) break;
-      if (!SPEC[k].name) { fprintf(stderr, "%s:%d: unknown command '%s'\n", path, line, tok[0]); bad = 1; continue; }
+      if (!SPEC[k].name) { say(LV_ERR, "%s:%d: unknown command '%s'\n", path, line, tok[0]); bad = 1; continue; }
       op = SPEC[k].op;
-      if (n - 1 < SPEC[k].min || n - 1 > SPEC[k].max) { fprintf(stderr, "%s:%d: %s: wrong argument count (%d..%d)\n", path, line, tok[0], SPEC[k].min, SPEC[k].max); bad = 1; continue; }
+      if (n - 1 < SPEC[k].min || n - 1 > SPEC[k].max) { say(LV_ERR, "%s:%d: %s: wrong argument count (%d..%d)\n", path, line, tok[0], SPEC[k].min, SPEC[k].max); bad = 1; continue; }
     }
     c.op = op; c.n = n - argi;
     for (int i = 0; i < c.n; i++) c.a[i] = strdup(tok[argi + i]);
@@ -144,35 +160,44 @@ static int parse_script(const char *path, Script *sc) {
     switch (op) {
     case C_RUN: seen_run = 1; break;
     case C_TYPE: case C_KEY: case C_CCLICK:
-      if (!seen_run) { fprintf(stderr, "%s:%d: input before any 'run'\n", path, line); ok = 0; }
-      if (op == C_TYPE && c.n > 1 && atoi(c.a[1]) < 1) { fprintf(stderr, "%s:%d: type speed must be ms per char >= 1\n", path, line); ok = 0; }
-      if (op == C_KEY) for (int i = 0; i < c.n; i++) if (!valid_key(c.a[i])) { fprintf(stderr, "%s:%d: bad key '%s'\n", path, line, c.a[i]); ok = 0; }
+      if (!seen_run) { say(LV_ERR, "%s:%d: input before any 'run'\n", path, line); ok = 0; }
+      if (op == C_TYPE && c.n > 1 && atoi(c.a[1]) < 1) { say(LV_ERR, "%s:%d: type speed must be ms per char >= 1\n", path, line); ok = 0; }
+      if (op == C_KEY) for (int i = 0; i < c.n; i++) if (!valid_key(c.a[i])) { say(LV_ERR, "%s:%d: bad key '%s'\n", path, line, c.a[i]); ok = 0; }
       break;
-    case C_WAIT: if (dur_ms(c.a[0], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[0]); ok = 0; } break;
-    case C_SLIDE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[2]); ok = 0; } break;
-    case C_TYPING: if (strcmp(c.a[0], "instant") && strcmp(c.a[0], "human")) { fprintf(stderr, "%s:%d: typing instant|human\n", path, line); ok = 0; } break;
-    case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { fprintf(stderr, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
+    case C_WAIT: if (dur_ms(c.a[0], &ms)) { say(LV_ERR, "%s:%d: bad duration '%s'\n", path, line, c.a[0]); ok = 0; } break;
+    case C_SLIDE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { say(LV_ERR, "%s:%d: bad duration '%s'\n", path, line, c.a[2]); ok = 0; } break;
+    case C_TYPING: if (strcmp(c.a[0], "instant") && strcmp(c.a[0], "human")) { say(LV_ERR, "%s:%d: typing instant|human\n", path, line); ok = 0; } break;
+    case C_PSCROLL: case C_MSCROLL:
+      if (!seen_run) { say(LV_ERR, "%s:%d: scroll before any 'run'\n", path, line); ok = 0; }
+      if (strcmp(c.a[0], "up") && strcmp(c.a[0], "down")) { say(LV_ERR, "%s:%d: %s up|down [count]\n", path, line, op == C_PSCROLL ? "PageScroll" : "MouseScroll"); ok = 0; }
+      if (c.n == 2 && (atoi(c.a[1]) < 1 || atoi(c.a[1]) > 100)) { say(LV_ERR, "%s:%d: scroll count 1..100\n", path, line); ok = 0; }
+      break;
+    case C_WAITFOR:
+      if (!seen_run) { say(LV_ERR, "%s:%d: WaitFor before any 'run'\n", path, line); ok = 0; }
+      if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
+      break;
+    case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { say(LV_ERR, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
     case C_TRANS: {
       int k = (!strcmp(c.a[0], "in") || !strcmp(c.a[0], "out") || !strcmp(c.a[0], "both")) ? 1 : 0;
-      if (c.n <= k) { fprintf(stderr, "%s:%d: Transition [in|out|both] EFFECT [ms]\n", path, line); ok = 0; }
-      else if (fx_parse(c.a[k]) < 0) { fprintf(stderr, "%s:%d: transition effect: %s\n", path, line, fx_list()); ok = 0; }
-      else if (c.n > k + 1 && dur_ms(c.a[k + 1], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[k + 1]); ok = 0; }
+      if (c.n <= k) { say(LV_ERR, "%s:%d: Transition [in|out|both] EFFECT [ms]\n", path, line); ok = 0; }
+      else if (fx_parse(c.a[k]) < 0) { say(LV_ERR, "%s:%d: transition effect: %s\n", path, line, fx_list()); ok = 0; }
+      else if (c.n > k + 1 && dur_ms(c.a[k + 1], &ms)) { say(LV_ERR, "%s:%d: bad duration '%s'\n", path, line, c.a[k + 1]); ok = 0; }
       break; }
     case C_CAPTION:
-      if (c.n >= 2 && strcmp(c.a[1], "top") && strcmp(c.a[1], "bottom")) { fprintf(stderr, "%s:%d: caption position top|bottom\n", path, line); ok = 0; }
+      if (c.n >= 2 && strcmp(c.a[1], "top") && strcmp(c.a[1], "bottom")) { say(LV_ERR, "%s:%d: caption position top|bottom\n", path, line); ok = 0; }
       break;
-    case C_SIZE: { int w, h; if (sscanf(c.a[0], "%dx%d", &w, &h) != 2 || w < 10 || h < 3 || w > 400 || h > 200) { fprintf(stderr, "%s:%d: size WxH (cells)\n", path, line); ok = 0; } break; }
+    case C_SIZE: { int w, h; if (sscanf(c.a[0], "%dx%d", &w, &h) != 2 || w < 10 || h < 3 || w > 400 || h > 200) { say(LV_ERR, "%s:%d: size WxH (cells)\n", path, line); ok = 0; } break; }
     case C_WINDOW:
-      if (strcmp(c.a[0], "tui") && strcmp(c.a[0], "gui") && strcmp(c.a[0], "web")) { fprintf(stderr, "%s:%d: window tui|gui|web\n", path, line); ok = 0; }
+      if (strcmp(c.a[0], "tui") && strcmp(c.a[0], "gui") && strcmp(c.a[0], "web")) { say(LV_ERR, "%s:%d: window tui|gui|web\n", path, line); ok = 0; }
       break;
-    case C_THEME:
+    case C_THEME: {
       int tk = 0; for (int q = 0; q < NTHEMES; q++) if (!strcmp(c.a[0], THEMES[q].name)) tk = 1;
-      if (!tk) { fprintf(stderr, "%s:%d: theme ", path, line); for (int q = 0; q < NTHEMES; q++) fprintf(stderr, "%s%s", q ? "|" : "", THEMES[q].name); fprintf(stderr, " (edit src/config.h to add one)\n"); ok = 0; }
-      break;
-    case C_FPS: if (atoi(c.a[0]) < 1 || atoi(c.a[0]) > 30) { fprintf(stderr, "%s:%d: fps 1..30\n", path, line); ok = 0; } break;
-    case C_FONT: if (atoi(c.a[0]) < 8 || atoi(c.a[0]) > 40) { fprintf(stderr, "%s:%d: font px 8..40\n", path, line); ok = 0; } break;
-    case C_ENV: if (!strchr(c.a[0], '=')) { fprintf(stderr, "%s:%d: env KEY=VALUE\n", path, line); ok = 0; } break;
-    case C_CMOVE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { fprintf(stderr, "%s:%d: bad duration\n", path, line); ok = 0; } break;
+      if (!tk) { char tl[256] = ""; for (int q = 0; q < NTHEMES; q++) { strncat(tl, q ? "|" : "", sizeof tl - strlen(tl) - 1); strncat(tl, THEMES[q].name, sizeof tl - strlen(tl) - 1); } say(LV_ERR, "%s:%d: theme %s (add one in src/config.h)\n", path, line, tl); ok = 0; }
+      break; }
+    case C_FPS: if (atoi(c.a[0]) < 1 || atoi(c.a[0]) > 30) { say(LV_ERR, "%s:%d: fps 1..30\n", path, line); ok = 0; } break;
+    case C_FONT: if (atoi(c.a[0]) < 8 || atoi(c.a[0]) > 40) { say(LV_ERR, "%s:%d: font px 8..40\n", path, line); ok = 0; } break;
+    case C_ENV: if (!strchr(c.a[0], '=')) { say(LV_ERR, "%s:%d: env KEY=VALUE\n", path, line); ok = 0; } break;
+    case C_CMOVE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { say(LV_ERR, "%s:%d: bad duration\n", path, line); ok = 0; } break;
     }
     if (!ok) { bad = 1; continue; }
     if (sc->n == sc->cap) { sc->cap = sc->cap ? sc->cap * 2 : 64; sc->v = realloc(sc->v, sc->cap * sizeof(Cmd)); }
@@ -387,7 +412,7 @@ typedef struct {
   /* state */
   Grid gr, prev; int have_session, dirty;
   /* quality gate */
-  int human, idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
+  int cut, ncut_frames, in_feat, feat_seen; const char *only_feat; int human, idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
@@ -420,6 +445,7 @@ static int vid_flush(G *g, long upto) {
 }
 /* present image for dur ms: dedup identical frames, only changed ones reach the encoder */
 static void put(G *g, const Img *im, int dur) {
+  if (g->cut) return; /* Cut ... CutEnd: nothing is recorded, video time stands still */
   size_t sz = (size_t)im->w * im->h * 4;
   if (!g->have_last || memcmp(g->last.p, im->p, sz)) {
     for (int i = 0; i < g->nsnap; i++) if (!g->snap[i].done && g->have_last && g->snap[i].ms < g->T) { write_ppm(&g->last, g->snap[i].file); g->snap[i].done = 1; }
@@ -427,7 +453,7 @@ static void put(G *g, const Img *im, int dur) {
     if (g->enc) {
       WebPPicture pic; WebPPictureInit(&pic); pic.width = im->w; pic.height = im->h; pic.use_argb = 1;
       WebPPictureImportRGBA(&pic, im->p, im->w * 4);
-      if (!WebPAnimEncoderAdd(g->enc, &pic, (int)g->T, &g->wcfg)) fprintf(stderr, "autodemo: webp add failed: %s\n", WebPAnimEncoderGetError(g->enc));
+      if (!WebPAnimEncoderAdd(g->enc, &pic, (int)g->T, &g->wcfg)) say(LV_ERR, "webp add failed: %s\n", WebPAnimEncoderGetError(g->enc));
       WebPPictureFree(&pic);
     }
     memcpy(g->last.p, im->p, sz); g->have_last = 1; g->nframes++;
@@ -496,6 +522,7 @@ static void compose(G *g) {
   }
 }
 static void present_dirty(G *g, int dur) {
+  if (g->cut) return;
   if (g->dirty || !g->have_last) { compose(g); g->dirty = 0; put(g, &g->frame, dur); }
   else g->T += dur;
 }
@@ -525,13 +552,13 @@ static int gate_verdict(G *g) {
   int total = g->cols * g->rows, err = 0;
   double fill = total ? 100.0 * g->peak_cells / total : 0;
   if (g->dead && g->dead_status != 0) {
-    fprintf(stderr, "autodemo: BAD DEMO: the program died (exit status %d). Last screen:\n%s\n", g->dead_status, g->dead_screen); err++;
+    { say(LV_ERR, "the program died (exit status %d). Last screen:\n", g->dead_status); char *ds = g->dead_screen; size_t dl = strlen(ds); while (dl && isspace((unsigned char)ds[dl - 1])) ds[--dl] = 0; while (*ds == '\n') ds++; if (*ds) fprintf(stderr, "%s%s%s\n", color_on > 0 ? "\033[2m" : "", ds, color_on > 0 ? "\033[0m" : ""); } err++;
   }
-  if (fill < 3.0) { fprintf(stderr, "autodemo: BAD DEMO: the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
-  else if (fill < 10.0) fprintf(stderr, "autodemo: warning: sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
-  if (g->ninputs && g->nstates <= 1) { fprintf(stderr, "autodemo: BAD DEMO: %d input(s) sent but the screen never changed\n", g->ninputs); err++; }
-  else if (g->nstates <= 2 && g->T > 3000) fprintf(stderr, "autodemo: warning: only %d distinct screens in %.1fs; looks static\n", g->nstates, g->T / 1000.0);
-  if (g->peak_styles < 3 && fill >= 3.0) fprintf(stderr, "autodemo: warning: only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
+  if (fill < 3.0) { say(LV_ERR, "the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
+  else if (fill < 10.0) say(LV_WARN, "sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
+  if (g->ninputs && g->nstates <= 1) { say(LV_ERR, "%d input(s) sent but the screen never changed\n", g->ninputs); err++; }
+  else if (g->nstates <= 2 && g->T > 3000) say(LV_WARN, "only %d distinct screens in %.1fs; looks static\n", g->nstates, g->T / 1000.0);
+  if (g->peak_styles < 3 && fill >= 3.0) say(LV_WARN, "only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
   return err;
 }
 
@@ -621,7 +648,7 @@ static int send_instant(G *g, const char *s) {
     seg = nl + 1;
   }
   free(buf);
-  if (rc) { fprintf(stderr, "autodemo: tmux send-keys failed\n"); return -1; }
+  if (rc) { say(LV_ERR, "tmux send-keys failed\n"); return -1; }
   g->idle = 0; tick(g, 40); wait_ms(g, sp(g, CFG_SEND_PAUSE_MS));
   return 0;
 }
@@ -634,7 +661,7 @@ static int send_text(G *g, const char *s, int speed) {
     int rc;
     if (ch_[0] == '\n') rc = TMUX("send-keys", "-t", "d", "Enter");
     else rc = TMUX("send-keys", "-t", "d", "-l", "--", ch_[0] == ';' && !ch_[1] ? "\\;" : ch_); /* a lone ; is tmux's command separator */
-    if (rc) { fprintf(stderr, "autodemo: tmux send-keys failed\n"); return -1; }
+    if (rc) { say(LV_ERR, "tmux send-keys failed\n"); return -1; }
     g->idle = 0;
     tick(g, ch_[0] == '\n' ? speed * 3 : jitter(speed));
   }
@@ -645,11 +672,64 @@ static int send_key(G *g, const char *spec) {
   char b[64]; strncpy(b, spec, 63); b[63] = 0; int rep = 1;
   char *star = strchr(b, '*'); if (star) { *star = 0; rep = atoi(star + 1); }
   for (int i = 0; i < rep; i++) {
-    if (TMUX("send-keys", "-t", "d", b)) { fprintf(stderr, "autodemo: tmux send-keys '%s' failed\n", b); return -1; }
+    if (TMUX("send-keys", "-t", "d", b)) { say(LV_ERR, "tmux send-keys '%s' failed\n", b); return -1; }
     tick(g, rep > 1 ? 90 : 120);
   }
   return 0;
 }
+
+/* feature names compare case-insensitively with spaces = dashes, so `--feature "Mouse scroll"` and mouse-scroll are the same */
+static void feat_slug(const char *in, char *out, size_t n) {
+  size_t k = 0;
+  for (; *in && k + 1 < n; in++) {
+    unsigned char c = (unsigned char)*in;
+    if (isalnum(c)) out[k++] = (char)tolower(c); else if (k && out[k - 1] != '-') out[k++] = '-';
+  }
+  while (k && out[k - 1] == '-') k--;
+  out[k] = 0;
+}
+static int feat_match(const char *a, const char *b) { char x[128], y[128]; feat_slug(a, x, sizeof x); feat_slug(b, y, sizeof y); return !strcmp(x, y); }
+
+/* does the text appear on the current screen? */
+static int grid_has(G *g, const char *needle) {
+  char line[4096];
+  for (int r = 0; r < g->gr.rows; r++) {
+    size_t n = 0;
+    for (int c = 0; c < g->gr.cols && n + 5 < sizeof line; c++) {
+      uint32_t cp = g->gr.c[r * g->gr.cols + c].cp; if (!cp) cp = ' ';
+      if (cp < 0x80) line[n++] = (char)cp;
+      else if (cp < 0x800) { line[n++] = (char)(0xc0 | cp >> 6); line[n++] = (char)(0x80 | (cp & 63)); }
+      else if (cp < 0x10000) { line[n++] = (char)(0xe0 | cp >> 12); line[n++] = (char)(0x80 | (cp >> 6 & 63)); line[n++] = (char)(0x80 | (cp & 63)); }
+      else { line[n++] = (char)(0xf0 | cp >> 18); line[n++] = (char)(0x80 | (cp >> 12 & 63)); line[n++] = (char)(0x80 | (cp >> 6 & 63)); line[n++] = (char)(0x80 | (cp & 63)); }
+    }
+    line[n] = 0;
+    if (strstr(line, needle)) return 1;
+  }
+  return 0;
+}
+
+/* PageScroll: PageUp/PageDown keys to the program (pagers, editors, TUIs) */
+static int page_scroll(G *g, int up, int n) {
+  for (int i = 0; i < n; i++) {
+    if (TMUX("send-keys", "-t", "d", up ? "PageUp" : "PageDown")) { say(LV_ERR, "tmux send-keys failed\n"); return -1; }
+    g->idle = 0; tick(g, 120); wait_ms(g, sp(g, CFG_SCROLL_PAUSE_MS));
+  }
+  return 0;
+}
+/* MouseScroll: wheel notches (SGR mouse reporting) at the pointer cell, or the screen centre; the program must have mouse reporting on */
+static int mouse_scroll(G *g, int up, int n) {
+  int col = g->cols / 2, row = g->rows / 2;
+  if (g->ptr_on) { col = (int)((g->px - g->tx0) / cw); row = (int)((g->py - g->ty0) / ch); }
+  if (col < 0) col = 0; if (row < 0) row = 0; if (col >= g->cols) col = g->cols - 1; if (row >= g->rows) row = g->rows - 1;
+  for (int i = 0; i < n; i++) {
+    char seq[48]; snprintf(seq, sizeof seq, "\033[<%d;%d;%dM", up ? 64 : 65, col + 1, row + 1);
+    if (TMUX("send-keys", "-t", "d", "-l", "--", seq)) { say(LV_ERR, "tmux send-keys failed\n"); return -1; }
+    g->idle = 0; tick(g, 70);
+  }
+  wait_ms(g, sp(g, CFG_SCROLL_PAUSE_MS));
+  return 0;
+}
+
 static void pointer_move(G *g, double cx, double cy, int ms) {
   double tx = g->tx0 + cx * cw + cw / 2, ty = g->ty0 + cy * ch + ch / 3;
   if (!g->ptr_on) { g->ptr_on = 1; g->px = tx + 60; g->py = ty + 40; }
@@ -688,7 +768,7 @@ static int start_session(G *g, const char *cmd) {
     char esc[2048]; int e = 0; for (const char *p = cmd; *p && e < 2040; p++) { if (*p == '\'') { memcpy(esc + e, "'\\''", 4); e += 4; } else esc[e++] = *p; }
     esc[e] = 0; snprintf(full + n, sizeof full - n, " sh -c '%s'", esc);
   }
-  if (tmux(argv, NULL)) { fprintf(stderr, "autodemo: cannot start tmux session\n"); return -1; }
+  if (tmux(argv, NULL)) { say(LV_ERR, "cannot start tmux session\n"); return -1; }
   g->have_session = 1;
   for (int i = 0; i < 40; i++) { msleep(g, 50); if (!capture(g)) break; }
   return 0;
@@ -700,7 +780,7 @@ static int start_session(G *g, const char *cmd) {
  * web = headless Firefox screenshots. They are selected with `window gui|web`. */
 static int backend_available(const char *name) {
   if (!strcmp(name, "tui")) return 1;
-  fprintf(stderr, "autodemo: window %s backend is not implemented yet (phase 2, see README)\n", name);
+  say(LV_ERR, "window %s backend is not implemented yet (phase 2, see README)\n", name);
   return 0;
 }
 
@@ -718,11 +798,24 @@ static void dump_ascii(G *g, const Cmd *c) {
 static int execute(G *g, Script *sc) {
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i]; int ms;
+    if (c->op == C_FEATURE) { g->feat_seen = 1; g->in_feat = !g->only_feat || feat_match(c->a[0], g->only_feat); continue; }
+    if (g->only_feat && g->feat_seen && !g->in_feat) continue; /* another feature's commands */
     switch (c->op) {
+    case C_CUT: g->cut = 1; break;
+    case C_CUTEND: g->cut = 0; g->dirty = 1; break;
+    case C_PSCROLL: g->ninputs++; if (page_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 1)) return -1; break;
+    case C_MSCROLL: g->ninputs++; if (mouse_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 3)) return -1; break;
+    case C_WAITFOR: {
+      int to = 30000; if (c->n == 2) dur_ms(c->a[1], &to);
+      int rl = g->realtime, found = 0, waited = 0; g->realtime = 1;
+      while (waited <= to) { if (capture(g) == 0 && grid_has(g, c->a[0])) { found = 1; break; } tick(g, 100); waited += 100; }
+      g->realtime = rl;
+      if (!found) { say(LV_ERR, "line %d: WaitFor \"%s\": not on screen after %.1fs\n", c->line, c->a[0], to / 1000.0); return -1; }
+      break; }
     case C_RUN: if (start_session(g, c->a[0])) return -1; g->in_run = 1; g->dirty = 1; if (!g->title[0]) snprintf(g->title, sizeof g->title, "%.100s", c->a[0]); render_layer(g); g->dirty = 1; tick(g, 200); if (g->preview) dump_ascii(g, c); break;
     case C_SETUP: {
       char *argv[] = {"sh", "-c", c->a[0], NULL};
-      if (run_argv(argv, NULL)) { fprintf(stderr, "line %d: setup command failed\n", c->line); return -1; }
+      if (run_argv(argv, NULL)) { say(LV_ERR, "line %d: setup command failed\n", c->line); return -1; }
       break; }
     case C_TYPE: g->ninputs++; if (send_text(g, c->a[0], sp(g, c->n > 1 ? atoi(c->a[1]) : CFG_TYPE_MS))) return -1; break;
     case C_KEY: g->ninputs++; for (int k = 0; k < c->n; k++) if (send_key(g, c->a[k])) return -1; break;
@@ -749,12 +842,13 @@ static int execute(G *g, Script *sc) {
       for (int w = lo; w <= hi; w++) { snprintf(g->trans[w], sizeof g->trans[w], "%s", c->a[k]); g->trans_ms[w] = tms; }
       break; }
     case C_CMOVE: ms = CFG_MOVE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); pointer_move(g, atof(c->a[0]), atof(c->a[1]), sp(g, ms)); break;
-    case C_CCLICK: if (!g->ptr_on) { fprintf(stderr, "line %d: click before cursor move\n", c->line); return -1; } pointer_click(g); break;
+    case C_CCLICK: if (!g->ptr_on) { say(LV_ERR, "line %d: click before cursor move\n", c->line); return -1; } pointer_click(g); break;
     case C_CHIDE: g->ptr_on = 0; g->dirty = 1; tick(g, 50); break;
     case C_CSHOW: g->ptr_on = 1; g->dirty = 1; tick(g, 50); break;
     default: break; /* header directives were applied earlier */
     }
   }
+  if (g->cut) say(LV_WARN, "Cut without CutEnd: the end of the demo was not recorded\n");
   return 0;
 }
 
@@ -797,10 +891,11 @@ static long estimate_ms(Script *sc) {
 }
 
 static int usage(void) {
-  fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--force] [--realtime] [--snap MS FILE.ppm]\n"
+  fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--feature NAME] [--split] [--force] [--realtime] [--snap MS FILE.ppm]\n"
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
-                  "       autodemo export NAME.fmt...  (NAME from .autodemo/examples, fmt webp|mp4|webm)\n"
+                  "       autodemo export NAME[:FEATURE].fmt... [--split]   (NAME from .autodemo/examples; --split = one file per Feature)\n"
+                  "       autodemo features X.demo     (list the Feature sections)\n"
                   "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
                   "  no -o: writes .autodemo/export/NAME.webp next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless (default), 1..100 = lossy quality\n");
   return 2;
@@ -842,13 +937,16 @@ static int run_self(const char *self, char *const *args) {
   int st; waitpid(p, &st, 0); return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 }
 /* one demo through self: op = render|check|preview; fmt used for render */
-static int one(const char *self, const char *root, const char *op, const char *name, const char *fmt) {
+static int one(const char *self, const char *root, const char *op, const char *name, const char *fmt, const char *feature, int split) {
   char in[1200], out[1200];
   snprintf(in, sizeof in, "%s/.autodemo/examples/%s.demo", root, name);
-  struct stat st; if (stat(in, &st)) { fprintf(stderr, "autodemo: no demo '%s' (%s)\n", name, in); return 1; }
+  struct stat st; if (stat(in, &st)) { say(LV_ERR, "no demo '%s' (%s)\n", name, in); return 1; }
   if (!strcmp(op, "render")) {
-    snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s", root, name, fmt);
-    return run_self(self, (char *[]){(char *)self, "render", in, "-o", out, NULL});
+    char *a[10]; int n = 0; a[n++] = (char *)self; a[n++] = "render"; a[n++] = in;
+    if (feature) { char sl[128]; feat_slug(feature, sl, sizeof sl); snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s.%s", root, name, sl, fmt); a[n++] = "--feature"; a[n++] = (char *)feature; }
+    else snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s", root, name, fmt);
+    a[n++] = "-o"; a[n++] = out; if (split) a[n++] = "--split"; a[n] = NULL;
+    return run_self(self, a);
   }
   return run_self(self, (char *[]){(char *)self, (char *)op, in, NULL});
 }
@@ -857,23 +955,26 @@ static int is_fmt(const char *f) { return !strcmp(f, "webp") || !strcmp(f, "mp4"
 static int project_cmd(const char *self, int argc, char **argv) {
   const char *m = argv[1];
   char root[1024];
-  if (find_root(root, sizeof root)) { fprintf(stderr, "autodemo: no .autodemo/examples found here or above\n"); return 1; }
+  if (find_root(root, sizeof root)) { say(LV_ERR, "no .autodemo/examples found here or above\n"); return 1; }
+  int split = 0;
+  for (int i = 2; i < argc; i++) if (!strcmp(argv[i], "--split")) { split = 1; memmove(argv + i, argv + i + 1, (size_t)(argc - i) * sizeof *argv); argc--; i--; }
   char **all; int na = list_demos(root, &all);
   if (!strcmp(m, "list")) { for (int i = 0; i < na; i++) puts(all[i]); return 0; }
   if (!strcmp(m, "export")) { /* export NAME.fmt ... ; NAME alone = webp */
     if (argc < 3) return usage();
     int bad = 0;
     for (int i = 2; i < argc; i++) {
-      char nm[256]; snprintf(nm, sizeof nm, "%s", argv[i]); const char *fmt = "webp";
+      char nm[256]; snprintf(nm, sizeof nm, "%s", argv[i]); const char *fmt = "webp", *feat = NULL;
       char *dot = strrchr(nm, '.');
       if (dot && is_fmt(dot + 1)) { fmt = dot + 1; *dot = 0; }
       else if (dot && !strcmp(dot, ".demo")) *dot = 0;
-      bad |= one(self, root, "render", nm, fmt) != 0;
+      char *colon = strchr(nm, ':'); if (colon) { *colon = 0; feat = colon + 1; } /* NAME:FEATURE.fmt */
+      bad |= one(self, root, "render", nm, fmt, feat, split) != 0;
     }
     return bad;
   }
   /* bulk OP [FMT] [NAME...] : OP = export|check|preview|clean|list ; no names = every demo */
-  if (argc < 3) { fprintf(stderr, "usage: autodemo bulk export|check|preview|clean|list [webp|mp4|webm] [NAME...]\n"); return 2; }
+  if (argc < 3) { fprintf(stderr, "usage: autodemo bulk export|check|preview|clean|list [webp|mp4|webm] [NAME...] [--split]\n"); return 2; }
   const char *op = argv[2], *fmt = "webp"; int i = 3;
   if (!strcmp(op, "export") && i < argc && is_fmt(argv[i])) fmt = argv[i++];
   char **names = argv + i; int nn = argc - i;
@@ -889,9 +990,9 @@ static int project_cmd(const char *self, int argc, char **argv) {
       continue;
     }
     const char *rop = !strcmp(op, "export") ? "render" : op;
-    if (strcmp(rop, "render") && strcmp(rop, "check") && strcmp(rop, "preview")) { fprintf(stderr, "autodemo: unknown bulk op '%s'\n", op); return 2; }
+    if (strcmp(rop, "render") && strcmp(rop, "check") && strcmp(rop, "preview")) { say(LV_ERR, "unknown bulk op '%s'\n", op); return 2; }
     printf("== %s %s\n", op, names[k]); fflush(stdout);
-    int rc = one(self, root, rop, names[k], fmt);
+    int rc = one(self, root, rop, names[k], fmt, NULL, split);
     if (rc == 0) ok++; else if (rc == 3) { skipped++; } else bad++;
   }
   if (strcmp(op, "clean")) printf("bulk %s: %d ok, %d failed, %d skipped\n", op, ok, bad, skipped);
@@ -907,13 +1008,15 @@ int main(int argc, char **argv) {
     self[l] = 0; return project_cmd(self, argc, argv);
   }
   if (argc < 3) return usage();
-  const char *mode = argv[1], *in = argv[2], *out = NULL; int q = 0;
+  const char *mode = argv[1], *in = argv[2], *out = NULL; int q = 0, split = 0;
   G *g = calloc(1, sizeof *g);
   for (int i = 3; i < argc; i++) {
     if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
     else if (!strcmp(argv[i], "-q") && i + 1 < argc) q = atoi(argv[++i]);
     else if (!strcmp(argv[i], "-v")) verbose = 1;
     else if (!strcmp(argv[i], "--force")) g->force = 1;
+    else if (!strcmp(argv[i], "--feature") && i + 1 < argc) g->only_feat = argv[++i];
+    else if (!strcmp(argv[i], "--split")) split = 1;
     else if (!strcmp(argv[i], "--realtime")) g->realtime = 1;
     else if (!strcmp(argv[i], "--speed") && i + 1 < argc) cli_speed = atof(argv[++i]);
     else if (!strcmp(argv[i], "--snap") && i + 2 < argc && g->nsnap < 8) { g->snap[g->nsnap].ms = atol(argv[++i]); g->snap[g->nsnap++].file = argv[++i]; }
@@ -923,6 +1026,13 @@ int main(int argc, char **argv) {
   if (parse_script(in, &sc)) return 1;
   apply_header(g, &sc);
   if (cli_speed > 0) g->speed = cli_speed;
+  if (!strcmp(mode, "features")) {
+    int nf = 0; for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_FEATURE) { printf("%s\n", sc.v[i].a[0]); nf++; }
+    if (!nf) say(LV_NOTE, "%s has no Feature lines\n", in);
+    return 0;
+  }
+  if (g->only_feat) { int f = 0; for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_FEATURE && feat_match(sc.v[i].a[0], g->only_feat)) f = 1;
+    if (!f) { say(LV_ERR, "%s has no feature '%s' (autodemo features %s)\n", in, g->only_feat, in); return 1; } }
   if (!strcmp(mode, "check")) {
     printf("%s: ok, %d commands, %dx%d cells, ~%.1fs\n", in, sc.n, g->cols, g->rows, estimate_ms(&sc) / 1000.0);
     return 0;
@@ -941,14 +1051,33 @@ int main(int argc, char **argv) {
       size_t dl = strlen(dir); const char *tail = "/examples";
       if (dl >= strlen(tail) && !strcmp(dir + dl - strlen(tail), tail)) dir[dl - strlen(tail)] = 0; /* .autodemo */
       else { strncat(dir, "/.autodemo", sizeof dir - strlen(dir) - 1); }
-      snprintf(outbuf, sizeof outbuf, "%s/export/%s.%s", dir, base, fmt_ext ? fmt_ext : "webp"); out = outbuf;
+      char fs[140] = ""; if (g->only_feat) { char sl[128]; feat_slug(g->only_feat, sl, sizeof sl); snprintf(fs, sizeof fs, ".%s", sl); }
+      snprintf(outbuf, sizeof outbuf, "%s/export/%s%s.%s", dir, base, fs, fmt_ext ? fmt_ext : "webp"); out = outbuf;
     } else if (!strrchr(strrchr(out, '/') ? strrchr(out, '/') : out, '.')) {
-      snprintf(outbuf, sizeof outbuf, "%s.webp", out); fprintf(stderr, "autodemo: no extension in -o, writing %s\n", outbuf); out = outbuf;
+      snprintf(outbuf, sizeof outbuf, "%s.webp", out); say(LV_ERR, "no extension in -o, writing %s\n", outbuf); out = outbuf;
     }
     mkdir_p(out);
+    if (split) { /* one render per Feature: NAME.FEATURE.ext next to the chosen output */
+      char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1); if (l <= 0) { perror("readlink"); return 1; } self[l] = 0;
+      char base[1024]; snprintf(base, sizeof base, "%s", out); char *dot = strrchr(base, '.'); const char *ext = dot ? dot : ".webp"; char extb[16]; snprintf(extb, sizeof extb, "%s", ext); if (dot) *dot = 0;
+      int nf = 0, bad = 0, skipped = 0;
+      for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_FEATURE) {
+        char sl[128], o2[1200], qs[16], ss[32]; feat_slug(sc.v[i].a[0], sl, sizeof sl); snprintf(o2, sizeof o2, "%s.%s%s", base, sl, extb);
+        char *a[16]; int n = 0; a[n++] = self; a[n++] = "render"; a[n++] = (char *)in; a[n++] = "--feature"; a[n++] = sc.v[i].a[0]; a[n++] = "-o"; a[n++] = o2;
+        if (q) { snprintf(qs, sizeof qs, "%d", q); a[n++] = "-q"; a[n++] = qs; }
+        if (cli_speed > 0) { snprintf(ss, sizeof ss, "%g", cli_speed); a[n++] = "--speed"; a[n++] = ss; }
+        if (g->force) a[n++] = "--force";
+        a[n] = NULL; nf++;
+        say(LV_NOTE, "feature %s\n", sc.v[i].a[0]);
+        int rc = run_self(self, a); if (rc == 3) skipped++; else if (rc) bad++;
+      }
+      if (!nf) { say(LV_ERR, "--split: %s has no Feature lines\n", in); return 1; }
+      say(bad ? LV_ERR : LV_OK, "split: %d feature(s), %d failed, %d skipped\n", nf, bad, skipped);
+      return bad != 0;
+    }
   }
   for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_WINDOW && !backend_available(sc.v[i].a[0])) return 3;
-  if (fonts_init(g->fontpx, &THEMES[g->theme])) { fprintf(stderr, "autodemo: no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
+  if (fonts_init(g->fontpx, &THEMES[g->theme])) { say(LV_ERR, "no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
   layout(g);
   g->preview = preview; g->sleep_scale = preview ? 0.3 : 1.0;
   g->gr = (Grid){g->cols, g->rows, 0, 0, 0, calloc(g->cols * g->rows, sizeof(Cell))};
@@ -986,7 +1115,7 @@ int main(int argc, char **argv) {
     char cmd[1024]; g->ff_fps = 30;
     snprintf(cmd, sizeof cmd, "ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgba -s %dx%d -r 30 -i - -an %s -pix_fmt yuv420p '%s'", g->W, g->H,
              !strcmp(ext, ".mp4") ? "-c:v libx264 -crf 24 -preset slow -movflags +faststart" : "-c:v libvpx-vp9 -crf 34 -b:v 0", out);
-    g->ff = popen(cmd, "w"); if (!g->ff) { fprintf(stderr, "autodemo: ffmpeg not available\n"); return 1; }
+    g->ff = popen(cmd, "w"); if (!g->ff) { say(LV_ERR, "ffmpeg not available\n"); return 1; }
     g->outfmt = 'v';
   } else if (render) {
     WebPAnimEncoderOptionsInit(&g->eopt); g->eopt.anim_params.loop_count = g->loop ? 0 : 1; g->eopt.minimize_size = 1; g->eopt.allow_mixed = 1;
@@ -1000,17 +1129,17 @@ int main(int argc, char **argv) {
   if (rc) return 1;
   int bad = gate_verdict(g);
   if (bad && !g->force) {
-    fprintf(stderr, "autodemo: not writing %s (%d problem%s). Fix the demo, or pass --force to keep it.\n", out ? out : "output", bad, bad == 1 ? "" : "s");
+    say(LV_ERR, "not writing %s (%d problem%s). Fix the demo, or pass --force to keep it.\n", out ? out : "output", bad, bad == 1 ? "" : "s");
     return 4;
   }
   /* hold the last frame briefly so loops do not snap */
   present_dirty(g, 600);
   for (int i = 0; i < g->nsnap; i++) if (!g->snap[i].done && g->have_last) write_ppm(&g->last, g->snap[i].file);
-  if (g->ff) { vid_flush(g, g->T); if (pclose(g->ff)) { fprintf(stderr, "autodemo: ffmpeg failed\n"); return 1; } }
+  if (g->ff) { vid_flush(g, g->T); if (pclose(g->ff)) { say(LV_ERR, "ffmpeg failed\n"); return 1; } }
   if (g->enc) {
     WebPAnimEncoderAdd(g->enc, NULL, (int)g->T, NULL);
     WebPData data; WebPDataInit(&data);
-    if (!WebPAnimEncoderAssemble(g->enc, &data)) { fprintf(stderr, "autodemo: webp assemble failed\n"); return 1; }
+    if (!WebPAnimEncoderAssemble(g->enc, &data)) { say(LV_ERR, "webp assemble failed\n"); return 1; }
     FILE *f = fopen(out, "wb"); if (!f || fwrite(data.bytes, 1, data.size, f) != data.size) { perror(out); return 1; }
     fclose(f); WebPDataClear(&data); WebPAnimEncoderDelete(g->enc);
   }
@@ -1019,10 +1148,10 @@ int main(int argc, char **argv) {
     printf("%s: %dx%d, %.1fs, %ld unique frames, %.1f KiB\n", out, g->W, g->H, g->T / 1000.0, g->nframes, sz / 1024.0);
     /* GitHub check: README media is inlined up to ~10 MB; big files are slow to load and bloat the repo */
     double mib = sz / 1048576.0;
-    if (mib > 10.0 && !g->force) { fprintf(stderr, "autodemo: GITHUB: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }
-    if (mib > 10.0) fprintf(stderr, "autodemo: GITHUB: %.1f MiB is over the 10 MiB README media limit\n", mib);
-    else if (mib > 5.0) fprintf(stderr, "autodemo: github: warning, %.1f MiB is heavy for a README (limit 10 MiB); consider -q 60 or mp4/webm\n", mib);
-    else if (mib > 2.0) fprintf(stderr, "autodemo: github: note, %.1f MiB (fine, but slow on mobile)\n", mib);
+    if (mib > 10.0 && !g->force) { say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }
+    if (mib > 10.0) say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit\n", mib);
+    else if (mib > 5.0) say(LV_WARN, "github: %.1f MiB is heavy for a README (limit 10 MiB); consider -q 60 or mp4/webm\n", mib);
+    else if (mib > 2.0) say(LV_NOTE, "github: %.1f MiB (fine, but slow on mobile)\n", mib);
   }
   return 0;
 }

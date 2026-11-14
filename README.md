@@ -35,6 +35,11 @@ are left behind (tiny); delete them yourself.
 | `MouseClick` / `MouseHide` / `MouseShow` | `cursor click/hide/show` | |
 | `Transition [in\|out\|both] EFFECT [ms]` | | effect when a slide appears (`in`) / goes away (`out`); default both. Effects: none fade zoom zoom-in zoom-out slide slide-in slide-out slide-left slide-right slide-up slide-down wipe |
 | `Speed N` | | playback speed of typing, mouse, sleeps and slides (default 2, `--speed N` on the command line) |
+| `Cut` / `CutEnd` | | frames in between are not recorded (loading screens); video time stands still |
+| `WaitFor "text" [timeout]` | | wait until the text is on screen (default 30 s, error if it never shows); pair with `Cut` |
+| `Feature "name"` | | starts a section; lines before the first `Feature` always run. `--feature NAME` renders only that one |
+| `PageScroll up\|down [n]` | | PageUp/PageDown keys (pagers, editors) |
+| `MouseScroll up\|down [n]` | | mouse wheel at the pointer (program must use mouse reporting) |
 | `Run`, `Caption`, `Slide`, `Transition`, `Window`, `Theme`, `Size`, `Title`, `Setup`, `Cd`, `Env`, `Fps`, `Font`, `Loop` | same | |
 
 ## config.h
@@ -50,13 +55,17 @@ with `Theme NAME`). A script overrides size, theme, font, fps, speed and transit
 nothing. Warnings for sparse or static screens. GitHub check on the output: over 10 MiB is refused (exit 5, GitHub
 does not show README media that big), over 5 MiB warns. Live UIs (gtop, frost) are better as a short `Loop`.
 
+Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when piped or `NO_COLOR` is set.
+
 ## Usage
 
     make
     ./autodemo check   x.demo
     ./autodemo render  x.demo [-o out.webp|mp4|webm] [-q N] [--snap MS frame.ppm] [-v]
     ./autodemo preview x.demo
-    ./autodemo export  ls.mp4 gtop         # NAME.fmt from .autodemo/examples -> .autodemo/export
+    ./autodemo features x.demo             # list Feature names
+    ./autodemo render  x.demo --feature NAME | --split   # one feature, or one file per feature
+    ./autodemo export  ls.mp4 gtop features:page-scroll.webp         # NAME.fmt from .autodemo/examples -> .autodemo/export
     ./autodemo bulk export mp4 [NAME...]   # every demo (or the listed ones); GUI/web demos are skipped
     ./autodemo bulk check | preview | clean | list
 

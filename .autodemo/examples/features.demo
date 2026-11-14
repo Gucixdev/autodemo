@@ -1,0 +1,22 @@
+# one script, several features: render all, or one with --feature, or --split for one file each
+Size 90x20
+Theme matrix
+Title "features"
+Setup seq 1 200 | sed 's/^/line /' > $HOME/long.txt
+Cd /tmp
+Run less $HOME/long.txt
+Sleep 300ms
+
+Feature "Page scroll"
+Caption "PageScroll down" bottom
+PageScroll down 2
+PageScroll up 1
+
+Feature "Cut the loading"
+Caption "Slow part cut out" bottom
+Cut
+SendKey g
+WaitFor "line 1" 5s
+CutEnd
+SendKey G
+Sleep 400ms
