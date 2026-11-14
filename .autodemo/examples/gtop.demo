@@ -2,10 +2,9 @@
 Size 110x30
 Theme dark
 Title "gtop"
-Setup cc -O2 -o $HOME/gtop /data/dev/github/holyc/notcoreutils/gtop.c -lm
 Cd /tmp
 Slide "gtop" "a tiny top" 1500ms
-Run $HOME/gtop
+Run /data/dev/github/holyc/notcoreutils/bin/gtop
 Sleep 2s
 Caption "Live processes" bottom
 SendKey Down Down Down
