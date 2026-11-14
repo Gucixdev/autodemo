@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One file that defines every project demo. No arguments: ./projects/run
-# Per project: build it, write a .demo for each program into .autodemo/projects/REPO/, render to .autodemo/export/REPO/NAME.webp.
+# Per project: build it, write a .demo for each program into .autodemo/examples/REPO/ and render NAME.webp next to it.
 # Add a project = add a block at the bottom. `prog NAME -c CMD...` = your own commands, without -c = --help + man EXAMPLES
 # (the --help probe runs in the autodemo sandbox).
 set -u
@@ -10,16 +10,14 @@ ok=0 bad=0
 
 prog() { # prog REPO PATH-TO-BINARY [-c CMD]...
   local repo=$1 path=$2; shift 2
-  local name=${path##*/} dd=$AD/.autodemo/projects/$repo ex=$AD/.autodemo/export/$repo
+  local name=${path##*/} dd=$AD/.autodemo/examples/$repo
   [ -x "$path" ] || { echo "skip $repo/$name (not built: $path)"; bad=$((bad+1)); return; }
-  mkdir -p "$dd" "$ex"
+  mkdir -p "$dd"
   "$BIN" gen "$path" -d "$dd" "$@" || { bad=$((bad+1)); return; }
-  "$BIN" render "$dd/$name.demo" -o "$ex/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
+  "$BIN" render "$dd/$name.demo" -o "$dd/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
 }
-hand() { # hand REPO NAME: render the hand-written .autodemo/examples/NAME.demo (a TUI/GUI session, not --help)
-  local repo=$1 name=$2 ex=$AD/.autodemo/export/$1
-  mkdir -p "$ex"
-  "$BIN" render "$AD/.autodemo/examples/$name.demo" -o "$ex/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
+hand() { # hand NAME: render the hand-written .autodemo/examples/NAME.demo (a TUI/GUI session, not --help) next to it
+  "$BIN" render "$AD/.autodemo/examples/$1.demo" && ok=$((ok+1)) || bad=$((bad+1))
 }
 build() { echo "== build $1"; (cd "$GH/$1" && shift && "$@") >/dev/null 2>&1 || echo "build failed in $1"; }
 
@@ -52,9 +50,9 @@ fi
 
 # ---- other repos. Repos that are being edited are not rebuilt here: a missing binary is reported and skipped. --------
 # lazytui: C library with a demo app; frost and filem8: big interactive programs, shown by their hand-written sessions
-if [ -d "$GH/lazytui" ]; then build lazytui make; hand lazytui lazytui; fi
-if [ -x "$GH/frost/target/release/frost" ]; then hand frost frost; else echo "skip frost (not built)"; bad=$((bad+1)); fi
-if [ -x "$GH/filem8/target/release/filem8" ]; then hand filem8 filem8; else echo "skip filem8 (not built)"; bad=$((bad+1)); fi
+if [ -d "$GH/lazytui" ]; then build lazytui make; hand lazytui; fi
+if [ -x "$GH/frost/target/release/frost" ]; then hand frost; else echo "skip frost (not built)"; bad=$((bad+1)); fi
+if [ -x "$GH/filem8/target/release/filem8" ]; then hand filem8; else echo "skip filem8 (not built)"; bad=$((bad+1)); fi
 
 # command line tools: --help + man examples, probe runs in the sandbox
 prog netman $GH/netman/bin/netman
@@ -65,4 +63,4 @@ prog gael   $GH/gael/gael
 # no demo on purpose: vecindex (library + server, tests only), openapi (MCP server, python), steamdeck_launcher (iced window,
 # not run on a real Deck yet), symbiote and lean4 (skipped by decision).
 
-echo "done: $ok rendered, $bad skipped/failed -> $AD/.autodemo/export/"
+echo "done: $ok rendered, $bad skipped/failed -> $AD/.autodemo/examples/"

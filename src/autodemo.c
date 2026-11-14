@@ -59,8 +59,9 @@ int main(int argc, char **argv) {
     char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
     if (l <= 0) { perror("readlink"); return 1; }
     self[l] = 0; const char *od = NULL; char *cu[8]; int nc = 0;
-    for (int i = 3; i < argc; i++) { if (!strcmp(argv[i], "-d") && i + 1 < argc) od = argv[++i]; else if (!strcmp(argv[i], "-c") && i + 1 < argc && nc < 8) cu[nc++] = argv[++i]; else return usage(); }
-    return gen_cmd(self, argv[2], argv[1][0] == 'a', od, cu, nc);
+    char *su[8]; int ns = 0;
+    for (int i = 3; i < argc; i++) { if (!strcmp(argv[i], "-d") && i + 1 < argc) od = argv[++i]; else if (!strcmp(argv[i], "-c") && i + 1 < argc && nc < 8) cu[nc++] = argv[++i]; else if (!strcmp(argv[i], "-s") && i + 1 < argc && ns < 8) su[ns++] = argv[++i]; else return usage(); }
+    return gen_cmd(self, argv[2], argv[1][0] == 'a', od, cu, nc, su, ns);
   }
   if (argc >= 2 && (!strcmp(argv[1], "export") || !strcmp(argv[1], "bulk") || !strcmp(argv[1], "list"))) {
     char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
@@ -104,15 +105,12 @@ int main(int argc, char **argv) {
     if (out && (!strcmp(out, "webp") || !strcmp(out, "mp4") || !strcmp(out, "webm"))) { /* bare format name */
       snprintf(outbuf, sizeof outbuf, "%s", out); out = NULL; fmt_ext = strdup(outbuf);
     }
-    if (!out) { /* convention: <project>/.autodemo/export/<name>.<fmt>, project = parent of .autodemo/examples */
+    if (!out) { /* convention: next to the demo, <name>.<fmt> (hand-written and generated demos live in .autodemo/examples) */
       char dir[1024], base[256]; snprintf(dir, sizeof dir, "%s", in);
       char *sl = strrchr(dir, '/'); const char *bn = sl ? sl + 1 : dir; if (sl) *sl = 0; else strcpy(dir, ".");
       snprintf(base, sizeof base, "%s", bn); char *dot = strrchr(base, '.'); if (dot) *dot = 0;
-      size_t dl = strlen(dir); const char *tail = "/examples";
-      if (dl >= strlen(tail) && !strcmp(dir + dl - strlen(tail), tail)) dir[dl - strlen(tail)] = 0; /* .autodemo */
-      else { strncat(dir, "/.autodemo", sizeof dir - strlen(dir) - 1); }
-      char fs[140] = ""; if (g->only_feat) { char sl[128]; feat_slug(g->only_feat, sl, sizeof sl); snprintf(fs, sizeof fs, ".%s", sl); }
-      snprintf(outbuf, sizeof outbuf, "%s/export/%s%s.%s", dir, base, fs, fmt_ext ? fmt_ext : CFG_FORMAT); out = outbuf;
+      char fs[140] = ""; if (g->only_feat) { char sl2[128]; feat_slug(g->only_feat, sl2, sizeof sl2); snprintf(fs, sizeof fs, ".%s", sl2); }
+      snprintf(outbuf, sizeof outbuf, "%s/%s%s.%s", dir, base, fs, fmt_ext ? fmt_ext : CFG_FORMAT); out = outbuf;
     } else if (!strrchr(strrchr(out, '/') ? strrchr(out, '/') : out, '.')) {
       snprintf(outbuf, sizeof outbuf, "%s." CFG_FORMAT, out); say(LV_ERR, "no extension in -o, writing %s\n", outbuf); out = outbuf;
     }

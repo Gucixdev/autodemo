@@ -4,10 +4,10 @@ static int usage(void) {
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
                   "       autodemo export NAME[:FEATURE].fmt... [--split]   (NAME from .autodemo/examples; --split = one file per Feature)\n"
-                  "       autodemo gen PROGRAM [-d DIR] [-c CMD]...  (write .demo from --help + man EXAMPLES, or from your -c commands);  autodemo auto PROGRAM = gen + render\n"
+                  "       autodemo gen PROGRAM [-d DIR] [-s SETUP]... [-c CMD]...  (write a .demo that shows the program working: your -c commands, else man EXAMPLES, else README usage lines);  autodemo auto PROGRAM = gen + render\n"
                   "       autodemo features X.demo     (list the Feature sections)\n"
                   "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
-                  "  no -o: writes .autodemo/export/NAME.<CFG_FORMAT> next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless, 1..100 = lossy; default CFG_QUALITY quality\n");
+                  "  no -o: writes NAME.<CFG_FORMAT> next to the .demo\n  -q N   webp: 0 = lossless, 1..100 = lossy; default CFG_QUALITY quality\n");
   return 2;
 }
 
@@ -53,8 +53,8 @@ static int one(const char *self, const char *root, const char *op, const char *n
   struct stat st; if (stat(in, &st)) { say(LV_ERR, "no demo '%s' (%s)\n", name, in); return 1; }
   if (!strcmp(op, "render")) {
     char *a[10]; int n = 0; a[n++] = (char *)self; a[n++] = "render"; a[n++] = in;
-    if (feature) { char sl[128]; feat_slug(feature, sl, sizeof sl); snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s.%s", root, name, sl, fmt); a[n++] = "--feature"; a[n++] = (char *)feature; }
-    else snprintf(out, sizeof out, "%s/.autodemo/export/%s.%s", root, name, fmt);
+    if (feature) { char sl[128]; feat_slug(feature, sl, sizeof sl); snprintf(out, sizeof out, "%s/.autodemo/examples/%s.%s.%s", root, name, sl, fmt); a[n++] = "--feature"; a[n++] = (char *)feature; }
+    else snprintf(out, sizeof out, "%s/.autodemo/examples/%s.%s", root, name, fmt);
     a[n++] = "-o"; a[n++] = out; if (split) a[n++] = "--split"; a[n] = NULL;
     return run_self(self, a);
   }
@@ -96,7 +96,7 @@ static int project_cmd(const char *self, int argc, char **argv) {
   for (int k = 0; k < nn; k++) {
     if (!strcmp(op, "clean")) {
       for (const char **f = (const char *[]){"webp", "mp4", "webm", NULL}; *f; f++) {
-        char p[1300]; snprintf(p, sizeof p, "%s/.autodemo/export/%s.%s", root, names[k], *f);
+        char p[1300]; snprintf(p, sizeof p, "%s/.autodemo/examples/%s.%s", root, names[k], *f);
         if (!unlink(p)) printf("removed %s\n", p);
       }
       continue;

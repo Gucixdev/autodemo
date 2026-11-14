@@ -4,7 +4,7 @@ Scripted, non-interactive demo recorder for GitHub READMEs. You write a small `*
 autodemo drives the program (typed keys, simulated mouse pointer, captions, slides, transitions)
 and renders an **animated WebP** (or mp4/webm). Written in C, links freetype + libwebp.
 
-![ls demo](.autodemo/export/ls.webp)
+![ls demo](.autodemo/examples/ls.webp)
 
 ## Status (honest)
 
@@ -98,12 +98,13 @@ Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when pipe
     ./autodemo render  x.demo --feature NAME | --split   # one feature, or one file per feature
     ./autodemo gen  PROGRAM                # write .autodemo/examples/NAME.demo from --help + man EXAMPLES (plain text, edit it)
     ./autodemo auto PROGRAM                # gen + render, prints the README line
-    ./autodemo export  ls.mp4 gtop features:page-scroll.webp         # NAME.fmt from .autodemo/examples -> .autodemo/export
+    ./autodemo export  ls.mp4 gtop features:page-scroll.webp         # NAME.fmt from .autodemo/examples -> .autodemo/examples
     ./autodemo bulk export mp4 [NAME...]   # every demo (or the listed ones); GUI/web demos are skipped
     ./autodemo bulk check | preview | clean | list
 
-Layout: demos live in `.autodemo/examples/*.demo`; `render x.demo` with no `-o` (or `-o mp4`) writes
-`.autodemo/export/x.<fmt>` and creates the directories.
+Layout: one folder, `.autodemo/examples/`. Hand-written demos are `examples/NAME.demo`; `autodemo gen` / `projects/run` write
+`examples/REPO/NAME.demo`. `render x.demo` with no `-o` (or `-o mp4`) writes `x.<fmt>` right next to the demo, so a demo and
+its picture are always together.
 
 `-q 0` (default) is lossless; terminal frames are flat colour so lossless is already about as small
 as lossy. `.mp4`/`.webm` output goes through ffmpeg. `--snap` dumps the frame shown at MS as PPM
