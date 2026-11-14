@@ -1,0 +1,11 @@
+autodemo
+*.ppm
+/out/
+
+.lake/
+node_modules/
+*.o
+*.a
+*.so
+.env
+.env.*
