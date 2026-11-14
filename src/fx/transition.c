@@ -1,4 +1,4 @@
-/* fx.c - transition effects between two RGBA pictures of the same size. Pure functions on pixel buffers: no state, no
+/* transition.c - transition effects between two RGBA pictures of the same size. Pure functions on pixel buffers: no state, no
  * allocation, nothing from autodemo.c. fx_blend() writes the picture at progress u (0 = all A, 1 = all B, already eased).
  *
  *   fade                 A dissolves into B
@@ -12,7 +12,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
-#include "config.h"
+#include "../config.h"
 
 enum { FX_NONE, FX_FADE, FX_SLIDE_L, FX_SLIDE_R, FX_SLIDE_U, FX_SLIDE_D, FX_ZOOM, FX_ZOOM_OUT, FX_WIPE };
 

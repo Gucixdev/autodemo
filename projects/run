@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# One file that defines every project demo. No arguments: ./projects/run
+# Per project: build it, write a .demo for each program into .autodemo/projects/REPO/, render to .autodemo/export/REPO/NAME.webp.
+# Add a project = add a block at the bottom. `prog NAME -c CMD...` = your own commands, without -c = --help + man EXAMPLES
+# (the --help probe runs in the autodemo sandbox).
+set -u
+AD=$(cd "$(dirname "$0")/.." && pwd); BIN=$AD/autodemo; GH=${GH:-$HOME/dev/github}
+[ -x "$BIN" ] || make -C "$AD" >/dev/null || exit 1
+ok=0 bad=0
+
+prog() { # prog REPO PATH-TO-BINARY [-c CMD]...
+  local repo=$1 path=$2; shift 2
+  local name=${path##*/} dd=$AD/.autodemo/projects/$repo ex=$AD/.autodemo/export/$repo
+  [ -x "$path" ] || { echo "skip $repo/$name (not built: $path)"; bad=$((bad+1)); return; }
+  mkdir -p "$dd" "$ex"
+  "$BIN" gen "$path" -d "$dd" "$@" || { bad=$((bad+1)); return; }
+  "$BIN" render "$dd/$name.demo" -o "$ex/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
+}
+build() { echo "== build $1"; (cd "$GH/$1" && shift && "$@") >/dev/null 2>&1 || echo "build failed in $1"; }
+
+# ---- notcoreutils ---------------------------------------------------------------------------------------------
+R=$GH/notcoreutils; B=$R/bin
+if [ -d "$R" ]; then
+  build notcoreutils make
+  prog notcoreutils $B/tree     -c 'tree -L 2' -c 'tree -d' -c 'tree -a -I src'
+  prog notcoreutils $B/cloc     -c 'cloc --table .' -c 'cloc --files .'
+  prog notcoreutils $B/dv       -c 'dv .' -c 'dv --top 3 .'
+  prog notcoreutils $B/colorado -c 'printf "INFO started 10.0.0.1:8080\nWARN slow \"query\" took 1200ms\nERROR failed\n" | colorado'
+  prog notcoreutils $B/tgates   -c 'tgates neg 1,0,-1' -c 'tgates min 1,0,-1 0,0,0' -c 'tgates max 1,0,-1 0,0,0' -c 'tgates diff 1,0,-1 -1,0,1'
+  prog notcoreutils $B/snip     -c 'snip add -t git -d "undo last commit" git reset --soft HEAD~1' -c 'snip add -t sys -d "disk use" df -h' -c 'snip list' -c 'snip tags'
+  prog notcoreutils $B/netcat   -c '(echo hello from netcat | netcat -l 9000 &) ; sleep 1 ; netcat localhost 9000'
+  prog notcoreutils $B/fzf      -c 'ls | fzf --filter=ma' -c 'printf "apple\nbanana\ncherry\n" | fzf --filter=an'
+  prog notcoreutils $B/man      -c 'man tree | head -n 24'
+  prog notcoreutils $B/notts    -c 'notts send -u critical "build failed" "see the log"' -c 'notts history 3'
+  # display / password / device tools: only --help + man examples (default gen, sandboxed probe), nothing interactive is run
+  for t in gtop sudo scenario cb xcb wlcb shot; do prog notcoreutils $B/$t; done
+fi
+
+# ---- bash repo: every git-tracked executable, --help only (probe runs in the sandbox) ---------------------------
+R=$GH/bash
+if [ -d "$R/.git" ]; then
+  while IFS= read -r f; do
+    case $f in lib/*|templates/*|installer/*) continue ;; esac  # internals / need root, shown via their callers
+    prog bash "$R/$f"
+  done < <(git -C "$R" ls-files -s | awk '$1=="100755"{print $4}')
+fi
+
+# ---- more projects: copy the block above (R=..., build ..., prog ...) --------------------------------------------
+# R=$GH/bash;   prog bash   $R/<script>
+# R=$GH/lazytui;prog lazytui $R/bin/demo
+# lean4 and symbiote are skipped on purpose.
+
+echo "done: $ok rendered, $bad skipped/failed -> $AD/.autodemo/export/"

@@ -20,7 +20,7 @@ typedef struct { int fd, nfd, fds[16]; unsigned char in[1 << 16]; size_t nin; Ob
 /* a toolkit may bind wl_seat more than once (GTK and Gecko both do): every pointer/keyboard object gets every event */
 #define KSND(c, ...) for (int _k = 0; _k < (c)->nkb; _k++) snd(c, (c)->kbo[_k], __VA_ARGS__)
 #define PSND(c, ...) for (int _k = 0; _k < (c)->nptr; _k++) snd(c, (c)->ptro[_k], __VA_ARGS__)
-static struct { int lfd, run; char dir[200], sock[64]; pid_t pid; Cli c; int have, serial, mods; long t0; } W;
+static struct { int lfd, run; char dir[200], sock[64]; pid_t pid, xpid; int xdisp; Cli c; int have, serial, mods; long t0; } W;
 
 /* ---- wire ---- */
 static void snd(Cli *c, uint32_t id, int op, const char *f, ...) {
@@ -130,6 +130,7 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
   case T_POOL: {
     Pool *pl = &c->pool[o->a];
     if (op == 0) { uint32_t n = rd(&p); int off = (int)rd(&p), w = (int)rd(&p), h = (int)rd(&p), st = (int)rd(&p), fmt = (int)rd(&p);
+      if (getenv("AUTODEMO_WL_TRACE")) fprintf(stderr, "wl: buffer off=%d %dx%d stride=%d fmt=%d\n", off, w, h, st, fmt);
       for (int i = 0; i < 128 && n < MAXO; i++) if (!c->buf[i].used) { c->buf[i] = (Buf){1, o->a, off, w, h, st, fmt, n}; c->o[n].type = T_BUFFER; c->o[n].a = i; break; } }
     else if (op == 1) { if (pl->base) munmap(pl->base, pl->size); if (pl->fd >= 0) close(pl->fd); pl->used = 0; del_id(c, id); }
     else if (op == 2) { size_t ns = (size_t)rd(&p); if (pl->base) munmap(pl->base, pl->size); void *m = mmap(NULL, ns, PROT_READ, MAP_SHARED, pl->fd, 0); pl->base = m == MAP_FAILED ? NULL : m; pl->size = ns; }
@@ -284,6 +285,7 @@ static void gui_blit(G *g) {
   }
 }
 static void gui_close(G *g) { (void)g;
+  if (W.xpid > 0) { kill(-W.xpid, SIGTERM); usleep(100000); kill(-W.xpid, SIGKILL); waitpid(W.xpid, NULL, 0); W.xpid = 0; }
   if (W.pid > 0) { kill(-W.pid, SIGTERM); for (int i = 0; i < 20; i++) { if (waitpid(W.pid, NULL, WNOHANG) == W.pid) { W.pid = 0; break; } usleep(50000); }
     if (W.pid > 0) { kill(-W.pid, SIGKILL); waitpid(W.pid, NULL, 0); W.pid = 0; } } if (W.lfd >= 0) { close(W.lfd); W.lfd = -1; } if (W.sock[0]) { char p[300]; snprintf(p, sizeof p, "%s/%s", W.dir, W.sock); unlink(p); rmdir(W.dir); W.sock[0] = 0; } }
 static int gui_start(G *g, const char *cmd) {
@@ -293,19 +295,38 @@ static int gui_start(G *g, const char *cmd) {
   if (W.lfd < 0 || bind(W.lfd, (struct sockaddr *)&a, sizeof a) || listen(W.lfd, 4)) { say(LV_ERR, "cannot listen on %s: %s\n", a.sun_path, strerror(errno)); return -1; }
   signal(SIGPIPE, SIG_IGN); W.t0 = wl_now(); g->realtime = 1; /* async GUI toolkits need real time between events, idle-skipping would burst them */
   g->page = img_new(g->cols, g->rows); g->have_session = 1; g->in_run = 1;
+  if (g->x11) {   /* X11 programs: a rootful Xwayland is just one more Wayland client (shm, one window) of our compositor */
+    int pf[2]; if (pipe(pf)) return -1;
+    W.xpid = fork(); if (W.xpid < 0) return -1;
+    if (!W.xpid) {
+      setpgid(0, 0); close(pf[0]); char fdn[16], geo[32]; snprintf(fdn, sizeof fdn, "%d", pf[1]); snprintf(geo, sizeof geo, "%dx%d", g->cols, g->rows);
+      setenv("XDG_RUNTIME_DIR", W.dir, 1); setenv("WAYLAND_DISPLAY", W.sock, 1); unsetenv("DISPLAY");
+      int dn = open("/dev/null", 2); dup2(dn, 0); if (!verbose) { dup2(dn, 1); dup2(dn, 2); }
+      execlp("Xwayland", "Xwayland", "-shm", "-noreset", "-geometry", geo, "-displayfd", fdn, (char *)NULL); _exit(127);
+    }
+    close(pf[1]); char nb[32] = {0}; int nn = 0, ok = 0;
+    for (int waited = 0; waited < 10000 && !ok; waited += 20) {        /* Xwayland needs our answers while it starts, so keep pumping */
+      wl_pump(g); struct pollfd pfd = {pf[0], POLLIN, 0};
+      if (poll(&pfd, 1, 20) > 0) { ssize_t r = read(pf[0], nb + nn, sizeof nb - 1 - nn); if (r > 0) { nn += (int)r; if (memchr(nb, '\n', nn)) ok = 1; } else if (r == 0) break; }
+    }
+    close(pf[0]);
+    if (!ok) { say(LV_ERR, "Xwayland did not start (is it installed?)\n"); return -1; }
+    W.xdisp = atoi(nb);
+  }
   W.pid = fork(); if (W.pid < 0) return -1;
   if (!W.pid) {
     setpgid(0, 0);
     setenv("XDG_RUNTIME_DIR", W.dir, 1); setenv("WAYLAND_DISPLAY", W.sock, 1); unsetenv("DISPLAY"); unsetenv("WAYLAND_SOCKET");
     setenv("GDK_BACKEND", "wayland", 1); setenv("QT_QPA_PLATFORM", "wayland", 1); setenv("MOZ_ENABLE_WAYLAND", "1", 1); setenv("MOZ_WEBRENDER", "0", 1); setenv("SDL_VIDEODRIVER", "wayland", 1);
     setenv("GSK_RENDERER", "cairo", 1); setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1); setenv("GDK_DEBUG", "gl-disable", 1);
+    if (g->x11) { char dsp[16]; snprintf(dsp, sizeof dsp, ":%d", W.xdisp); setenv("DISPLAY", dsp, 1); unsetenv("WAYLAND_DISPLAY"); unsetenv("MOZ_ENABLE_WAYLAND"); setenv("GDK_BACKEND", "x11", 1); setenv("QT_QPA_PLATFORM", "xcb", 1); setenv("SDL_VIDEODRIVER", "x11", 1); }
     for (int i = 0; i < g->nenv; i++) { char *e = strdup(g->env[i]), *q = strchr(e, '='); if (q) { *q = 0; setenv(e, q + 1, 1); } }
     if (g->cwd[0] && chdir(g->cwd)) _exit(126);
     int dn = open("/dev/null", 2); dup2(dn, 0); if (!verbose) { dup2(dn, 1); dup2(dn, 2); }
     execl("/bin/sh", "sh", "-c", cmd, (char *)NULL); _exit(127);
   }
   for (int waited = 0; waited < CFG_GUI_WAIT_MS; waited += 50) {
-    wl_pump(g); if (top_surf(&W.c) >= 0) { wl_pump(g); msleep(g, CFG_GUI_SETTLE_MS); wl_pump(g); wl_compose(g); return 0; }
+    wl_pump(g); if (top_surf(&W.c) >= 0 && (!g->x11 || waited >= 1500)) { wl_pump(g); msleep(g, CFG_GUI_SETTLE_MS); wl_pump(g); wl_compose(g); return 0; }
     int st; if (waitpid(W.pid, &st, WNOHANG) == W.pid) { W.pid = 0; say(LV_ERR, "the program exited before opening a window (status %d). Needs Wayland shm rendering; try GSK_RENDERER=cairo / a Wayland-capable program\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1); return -1; }
     msleep(g, 50);
   }

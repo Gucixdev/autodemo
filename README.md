@@ -77,7 +77,7 @@ no `WaitFor` (use `Sleep`), real-time capture. Knobs: `CFG_GUI_W/H/WAIT_MS/SETTL
 
 `src/config.h` holds every default, rebuild after editing: **default output format** (`CFG_FORMAT` webp|mp4|webm, used when no `-o`/extension is given), webp quality/effort, mp4/webm ffmpeg args and fps, default `Loop`, GitHub size limits, quality-gate thresholds, speed, transition, window size/font/fps, font file lists,
 window chrome (margin, title bar, corner radius, shadow, traffic-light colours), pointer/ripple/caption colours,
-slide look, and the **themes** (16-colour palette + text/background/outer/title-bar colours; add a line and use it
+slide look, and (in `src/fx/theme.c`) the **themes** (16-colour palette + text/background/outer/title-bar colours; add a line and use it
 with `Theme NAME`). A script overrides size, theme, font, fps, speed and transitions per demo.
 
 ## Checks
@@ -137,3 +137,7 @@ the overlay/transition/encoder stages already work on plain RGBA images.
 ## Tests
 
     make test
+
+## Source layout
+
+`src/autodemo.c` (parser, recorder, CLI) includes the rest: `src/fx/transition.c` (pure picture-blend effects), `src/fx/theme.c` (colour themes, pure data), `src/fx/anim.c` (transitions and the slide build-up on top of the recorder), `src/gui.c` (built-in Wayland compositor), `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
