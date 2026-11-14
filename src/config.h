@@ -2,6 +2,22 @@
 #ifndef AUTODEMO_CONFIG_H
 #define AUTODEMO_CONFIG_H
 
+/* output */
+#define CFG_FORMAT         "webp"  /* default output format when none is given: webp | mp4 | webm */
+#define CFG_QUALITY        0       /* webp: 0 = lossless, 1..100 = lossy (-q N overrides) */
+#define CFG_WEBP_METHOD    4       /* webp effort 0..6: higher = smaller file, slower render */
+#define CFG_VIDEO_FPS      30      /* mp4/webm frame rate */
+#define CFG_MP4_ARGS       "-c:v libx264 -crf 24 -preset slow -movflags +faststart"
+#define CFG_WEBM_ARGS      "-c:v libvpx-vp9 -crf 34 -b:v 0"
+#define CFG_LOOP           0       /* 1 = every demo loops without needing a `Loop` line */
+/* GitHub size check on the output (MiB): refused / warning / note */
+#define CFG_GH_MAX_MIB     10.0
+#define CFG_GH_WARN_MIB    5.0
+#define CFG_GH_NOTE_MIB    2.0
+/* quality gate (percent of non-blank cells at the busiest moment) */
+#define CFG_GATE_EMPTY_PCT 3.0     /* below: error */
+#define CFG_GATE_SPARSE_PCT 10.0   /* below: warning */
+#define CFG_GATE_MIN_STYLES 3      /* fewer distinct text styles: warning (no colour) */
 #define CFG_TRANSITION     "fade"  /* default effect between a slide and the terminal (see fx.c for the names) */
 #define CFG_TRANSITION_MS  300     /* its length */
 #define CFG_FX_STEP_MS     40      /* one effect frame (25 fps); smaller = smoother and a bigger file */

@@ -565,11 +565,11 @@ static int gate_verdict(G *g) {
   if (g->dead && g->dead_status != 0) {
     { say(LV_ERR, "the program died (exit status %d). Last screen:\n", g->dead_status); char *ds = g->dead_screen; size_t dl = strlen(ds); while (dl && isspace((unsigned char)ds[dl - 1])) ds[--dl] = 0; while (*ds == '\n') ds++; if (*ds) fprintf(stderr, "%s%s%s\n", color_on > 0 ? "\033[2m" : "", ds, color_on > 0 ? "\033[0m" : ""); } err++;
   }
-  if (fill < 3.0) { say(LV_ERR, "the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
-  else if (fill < 10.0) say(LV_WARN, "sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
+  if (fill < CFG_GATE_EMPTY_PCT) { say(LV_ERR, "the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
+  else if (fill < CFG_GATE_SPARSE_PCT) say(LV_WARN, "sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
   if (g->ninputs && g->nstates <= 1) { say(LV_ERR, "%d input(s) sent but the screen never changed\n", g->ninputs); err++; }
   else if (g->nstates <= 2 && g->T > 3000) say(LV_WARN, "only %d distinct screens in %.1fs; looks static\n", g->nstates, g->T / 1000.0);
-  if (g->peak_styles < 3 && fill >= 3.0) say(LV_WARN, "only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
+  if (g->peak_styles < CFG_GATE_MIN_STYLES && fill >= 3.0) say(LV_WARN, "only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
   return err;
 }
 
@@ -867,7 +867,7 @@ static int execute(G *g, Script *sc) {
 static void apply_header(G *g, Script *sc) {
   g->cols = CFG_COLS; g->rows = CFG_ROWS; g->fps = CFG_FPS; g->fontpx = CFG_FONT_PX; g->theme = 0; g->backend = 0;
   for (int k = 0; k < NTHEMES; k++) if (!strcmp(THEMES[k].name, CFG_THEME)) g->theme = k;
-  g->speed = CFG_SPEED; g->autocut = CFG_AUTOCUT_MS; g->human = !strcmp(CFG_TYPING, "human");
+  g->speed = CFG_SPEED; g->autocut = CFG_AUTOCUT_MS; g->loop = CFG_LOOP; g->human = !strcmp(CFG_TYPING, "human");
   for (int w = 0; w < 2; w++) { strcpy(g->trans[w], CFG_TRANSITION); g->trans_ms[w] = CFG_TRANSITION_MS; }
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];
@@ -909,7 +909,7 @@ static int usage(void) {
                   "       autodemo export NAME[:FEATURE].fmt... [--split]   (NAME from .autodemo/examples; --split = one file per Feature)\n"
                   "       autodemo features X.demo     (list the Feature sections)\n"
                   "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
-                  "  no -o: writes .autodemo/export/NAME.webp next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless (default), 1..100 = lossy quality\n");
+                  "  no -o: writes .autodemo/export/NAME.<CFG_FORMAT> next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless, 1..100 = lossy; default CFG_QUALITY quality\n");
   return 2;
 }
 
@@ -976,7 +976,7 @@ static int project_cmd(const char *self, int argc, char **argv) {
     if (argc < 3) return usage();
     int bad = 0;
     for (int i = 2; i < argc; i++) {
-      char nm[256]; snprintf(nm, sizeof nm, "%s", argv[i]); const char *fmt = "webp", *feat = NULL;
+      char nm[256]; snprintf(nm, sizeof nm, "%s", argv[i]); const char *fmt = CFG_FORMAT, *feat = NULL;
       char *dot = strrchr(nm, '.');
       if (dot && is_fmt(dot + 1)) { fmt = dot + 1; *dot = 0; }
       else if (dot && !strcmp(dot, ".demo")) *dot = 0;
@@ -987,7 +987,7 @@ static int project_cmd(const char *self, int argc, char **argv) {
   }
   /* bulk OP [FMT] [NAME...] : OP = export|check|preview|clean|list ; no names = every demo */
   if (argc < 3) { fprintf(stderr, "usage: autodemo bulk export|check|preview|clean|list [webp|mp4|webm] [NAME...] [--split]\n"); return 2; }
-  const char *op = argv[2], *fmt = "webp"; int i = 3;
+  const char *op = argv[2], *fmt = CFG_FORMAT; int i = 3;
   if (!strcmp(op, "export") && i < argc && is_fmt(argv[i])) fmt = argv[i++];
   char **names = argv + i; int nn = argc - i;
   if (nn == 0) { names = all; nn = na; }
@@ -1020,7 +1020,7 @@ int main(int argc, char **argv) {
     self[l] = 0; return project_cmd(self, argc, argv);
   }
   if (argc < 3) return usage();
-  const char *mode = argv[1], *in = argv[2], *out = NULL; int q = 0, split = 0;
+  const char *mode = argv[1], *in = argv[2], *out = NULL; int q = CFG_QUALITY, split = 0;
   G *g = calloc(1, sizeof *g);
   for (int i = 3; i < argc; i++) {
     if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
@@ -1064,14 +1064,14 @@ int main(int argc, char **argv) {
       if (dl >= strlen(tail) && !strcmp(dir + dl - strlen(tail), tail)) dir[dl - strlen(tail)] = 0; /* .autodemo */
       else { strncat(dir, "/.autodemo", sizeof dir - strlen(dir) - 1); }
       char fs[140] = ""; if (g->only_feat) { char sl[128]; feat_slug(g->only_feat, sl, sizeof sl); snprintf(fs, sizeof fs, ".%s", sl); }
-      snprintf(outbuf, sizeof outbuf, "%s/export/%s%s.%s", dir, base, fs, fmt_ext ? fmt_ext : "webp"); out = outbuf;
+      snprintf(outbuf, sizeof outbuf, "%s/export/%s%s.%s", dir, base, fs, fmt_ext ? fmt_ext : CFG_FORMAT); out = outbuf;
     } else if (!strrchr(strrchr(out, '/') ? strrchr(out, '/') : out, '.')) {
-      snprintf(outbuf, sizeof outbuf, "%s.webp", out); say(LV_ERR, "no extension in -o, writing %s\n", outbuf); out = outbuf;
+      snprintf(outbuf, sizeof outbuf, "%s." CFG_FORMAT, out); say(LV_ERR, "no extension in -o, writing %s\n", outbuf); out = outbuf;
     }
     mkdir_p(out);
     if (split) { /* one render per Feature: NAME.FEATURE.ext next to the chosen output */
       char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1); if (l <= 0) { perror("readlink"); return 1; } self[l] = 0;
-      char base[1024]; snprintf(base, sizeof base, "%s", out); char *dot = strrchr(base, '.'); const char *ext = dot ? dot : ".webp"; char extb[16]; snprintf(extb, sizeof extb, "%s", ext); if (dot) *dot = 0;
+      char base[1024]; snprintf(base, sizeof base, "%s", out); char *dot = strrchr(base, '.'); const char *ext = dot ? dot : "." CFG_FORMAT; char extb[16]; snprintf(extb, sizeof extb, "%s", ext); if (dot) *dot = 0;
       int nf = 0, bad = 0, skipped = 0;
       for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_FEATURE) {
         char sl[128], o2[1200], qs[16], ss[32]; feat_slug(sc.v[i].a[0], sl, sizeof sl); snprintf(o2, sizeof o2, "%s.%s%s", base, sl, extb);
@@ -1124,14 +1124,14 @@ int main(int argc, char **argv) {
 
   const char *ext = out ? strrchr(out, '.') : NULL;
   if (render && ext && (!strcmp(ext, ".mp4") || !strcmp(ext, ".webm"))) {
-    char cmd[1024]; g->ff_fps = 30;
-    snprintf(cmd, sizeof cmd, "ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgba -s %dx%d -r 30 -i - -an %s -pix_fmt yuv420p '%s'", g->W, g->H,
-             !strcmp(ext, ".mp4") ? "-c:v libx264 -crf 24 -preset slow -movflags +faststart" : "-c:v libvpx-vp9 -crf 34 -b:v 0", out);
+    char cmd[1024]; g->ff_fps = CFG_VIDEO_FPS;
+    snprintf(cmd, sizeof cmd, "ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - -an %s -pix_fmt yuv420p '%s'", g->W, g->H, CFG_VIDEO_FPS,
+             !strcmp(ext, ".mp4") ? CFG_MP4_ARGS : CFG_WEBM_ARGS, out);
     g->ff = popen(cmd, "w"); if (!g->ff) { say(LV_ERR, "ffmpeg not available\n"); return 1; }
     g->outfmt = 'v';
   } else if (render) {
     WebPAnimEncoderOptionsInit(&g->eopt); g->eopt.anim_params.loop_count = g->loop ? 0 : 1; g->eopt.minimize_size = 1; g->eopt.allow_mixed = 1;
-    WebPConfigInit(&g->wcfg); g->wcfg.lossless = q == 0; g->wcfg.quality = q ? q : 90; g->wcfg.method = 4;
+    WebPConfigInit(&g->wcfg); g->wcfg.lossless = q == 0; g->wcfg.quality = q ? q : 90; g->wcfg.method = CFG_WEBP_METHOD;
     if (q == 0) g->wcfg.exact = 0;
     g->enc = WebPAnimEncoderNew(g->W, g->H, &g->eopt); g->outfmt = 'w';
   }
@@ -1160,10 +1160,10 @@ int main(int argc, char **argv) {
     printf("%s: %dx%d, %.1fs, %ld unique frames, %.1f KiB\n", out, g->W, g->H, g->T / 1000.0, g->nframes, sz / 1024.0); if (g->ncut_ms > 0) say(LV_NOTE, "AutoCut removed %.1fs of still picture\n", g->ncut_ms / 1000.0);
     /* GitHub check: README media is inlined up to ~10 MB; big files are slow to load and bloat the repo */
     double mib = sz / 1048576.0;
-    if (mib > 10.0 && !g->force) { say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }
-    if (mib > 10.0) say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit\n", mib);
-    else if (mib > 5.0) say(LV_WARN, "github: %.1f MiB is heavy for a README (limit 10 MiB); consider -q 60 or mp4/webm\n", mib);
-    else if (mib > 2.0) say(LV_NOTE, "github: %.1f MiB (fine, but slow on mobile)\n", mib);
+    if (mib > CFG_GH_MAX_MIB && !g->force) { say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }
+    if (mib > CFG_GH_MAX_MIB) say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit\n", mib);
+    else if (mib > CFG_GH_WARN_MIB) say(LV_WARN, "github: %.1f MiB is heavy for a README (limit 10 MiB); consider -q 60 or mp4/webm\n", mib);
+    else if (mib > CFG_GH_NOTE_MIB) say(LV_NOTE, "github: %.1f MiB (fine, but slow on mobile)\n", mib);
   }
   return 0;
 }

@@ -45,7 +45,7 @@ are left behind (tiny); delete them yourself.
 
 ## config.h
 
-`src/config.h` holds every default, rebuild after editing: speed, transition, window size/font/fps, font file lists,
+`src/config.h` holds every default, rebuild after editing: **default output format** (`CFG_FORMAT` webp|mp4|webm, used when no `-o`/extension is given), webp quality/effort, mp4/webm ffmpeg args and fps, default `Loop`, GitHub size limits, quality-gate thresholds, speed, transition, window size/font/fps, font file lists,
 window chrome (margin, title bar, corner radius, shadow, traffic-light colours), pointer/ripple/caption colours,
 slide look, and the **themes** (16-colour palette + text/background/outer/title-bar colours; add a line and use it
 with `Theme NAME`). A script overrides size, theme, font, fps, speed and transitions per demo.
