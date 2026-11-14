@@ -5,6 +5,7 @@
 #define CFG_TRANSITION     "fade"  /* default effect between a slide and the terminal (see fx.c for the names) */
 #define CFG_TRANSITION_MS  300     /* its length */
 #define CFG_FX_STEP_MS     40      /* one effect frame (25 fps); smaller = smoother and a bigger file */
+#define CFG_AUTOCUT_MS     1500    /* a still picture longer than this stops costing video time (0 = off); `AutoCut on|off|MS` in a script */
 #define CFG_SPEED          2.0     /* playback speed of typing, mouse, sleeps and slides; `Speed N` in a script or --speed N changes it */
 #define CFG_SLIDE_MS       2000    /* how long a slide stays when the script gives no time */
 #define CFG_ZOOM_AMOUNT    0.25    /* zoom effects: how far the picture scales (0.25 = 25 %) */

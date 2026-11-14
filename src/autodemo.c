@@ -41,13 +41,13 @@ static void say(int lv, const char *fmt, ...) {
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_PSCROLL, C_MSCROLL, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_PSCROLL, C_MSCROLL, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"type",C_TYPE,1,2},{"key",C_KEY,1,5},{"wait",C_WAIT,1,1},
-  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,2},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
+  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,2},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
   {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
@@ -176,6 +176,7 @@ static int parse_script(const char *path, Script *sc) {
       if (!seen_run) { say(LV_ERR, "%s:%d: WaitFor before any 'run'\n", path, line); ok = 0; }
       if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
       break;
+    case C_AUTOCUT: if (strcmp(c.a[0], "off") && strcmp(c.a[0], "on") && atoi(c.a[0]) <= 0) { say(LV_ERR, "%s:%d: AutoCut on|off|MS\n", path, line); ok = 0; } break;
     case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { say(LV_ERR, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
     case C_TRANS: {
       int k = (!strcmp(c.a[0], "in") || !strcmp(c.a[0], "out") || !strcmp(c.a[0], "both")) ? 1 : 0;
@@ -412,7 +413,7 @@ typedef struct {
   /* state */
   Grid gr, prev; int have_session, dirty;
   /* quality gate */
-  int cut, ncut_frames, in_feat, feat_seen; const char *only_feat; int human, idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
+  int autocut; long still, ncut_ms; int cut, ncut_frames, in_feat, feat_seen; const char *only_feat; int human, idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
@@ -443,6 +444,16 @@ static int vid_flush(G *g, long upto) {
   while (g->ff_written < target) { if (fwrite(g->last.p, 1, sz, g->ff) != sz) return -1; g->ff_written++; }
   return 0;
 }
+/* advance video time; a picture that stays unchanged for longer than AutoCut ms stops costing video time */
+static void advance(G *g, int dur, int same) {
+  if (!same) g->still = dur;
+  else if (g->autocut > 0) {
+    long room = g->autocut - g->still; if (room < 0) room = 0;
+    g->still += dur;
+    if (dur > room) { g->ncut_ms += dur - room; dur = (int)room; }
+  }
+  g->T += dur;
+}
 /* present image for dur ms: dedup identical frames, only changed ones reach the encoder */
 static void put(G *g, const Img *im, int dur) {
   if (g->cut) return; /* Cut ... CutEnd: nothing is recorded, video time stands still */
@@ -456,9 +467,9 @@ static void put(G *g, const Img *im, int dur) {
       if (!WebPAnimEncoderAdd(g->enc, &pic, (int)g->T, &g->wcfg)) say(LV_ERR, "webp add failed: %s\n", WebPAnimEncoderGetError(g->enc));
       WebPPictureFree(&pic);
     }
-    memcpy(g->last.p, im->p, sz); g->have_last = 1; g->nframes++;
+    memcpy(g->last.p, im->p, sz); g->have_last = 1; g->nframes++; advance(g, dur, 0); return;
   }
-  g->T += dur;
+  advance(g, dur, 1);
 }
 
 /* ---- rendering ---- */
@@ -524,7 +535,7 @@ static void compose(G *g) {
 static void present_dirty(G *g, int dur) {
   if (g->cut) return;
   if (g->dirty || !g->have_last) { compose(g); g->dirty = 0; put(g, &g->frame, dur); }
-  else g->T += dur;
+  else advance(g, dur, 1);
 }
 
 /* ---- capture ---- */
@@ -834,6 +845,7 @@ static int execute(G *g, Script *sc) {
       if (g->preview) dump_ascii(g, c);
       free(A.p); free(S.p); break; }
     case C_SPEED: g->speed = atof(c->a[0]); break;
+    case C_AUTOCUT: g->autocut = !strcmp(c->a[0], "off") ? 0 : !strcmp(c->a[0], "on") ? CFG_AUTOCUT_MS : atoi(c->a[0]); break;
     case C_TYPING: g->human = !strcmp(c->a[0], "human"); break;
     case C_TRANS: {
       int k = (!strcmp(c->a[0], "in") || !strcmp(c->a[0], "out") || !strcmp(c->a[0], "both")) ? 1 : 0;
@@ -855,7 +867,7 @@ static int execute(G *g, Script *sc) {
 static void apply_header(G *g, Script *sc) {
   g->cols = CFG_COLS; g->rows = CFG_ROWS; g->fps = CFG_FPS; g->fontpx = CFG_FONT_PX; g->theme = 0; g->backend = 0;
   for (int k = 0; k < NTHEMES; k++) if (!strcmp(THEMES[k].name, CFG_THEME)) g->theme = k;
-  g->speed = CFG_SPEED; g->human = !strcmp(CFG_TYPING, "human");
+  g->speed = CFG_SPEED; g->autocut = CFG_AUTOCUT_MS; g->human = !strcmp(CFG_TYPING, "human");
   for (int w = 0; w < 2; w++) { strcpy(g->trans[w], CFG_TRANSITION); g->trans_ms[w] = CFG_TRANSITION_MS; }
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];
@@ -1145,7 +1157,7 @@ int main(int argc, char **argv) {
   }
   if (render) {
     FILE *f = fopen(out, "rb"); long sz = 0; if (f) { fseek(f, 0, SEEK_END); sz = ftell(f); fclose(f); }
-    printf("%s: %dx%d, %.1fs, %ld unique frames, %.1f KiB\n", out, g->W, g->H, g->T / 1000.0, g->nframes, sz / 1024.0);
+    printf("%s: %dx%d, %.1fs, %ld unique frames, %.1f KiB\n", out, g->W, g->H, g->T / 1000.0, g->nframes, sz / 1024.0); if (g->ncut_ms > 0) say(LV_NOTE, "AutoCut removed %.1fs of still picture\n", g->ncut_ms / 1000.0);
     /* GitHub check: README media is inlined up to ~10 MB; big files are slow to load and bloat the repo */
     double mib = sz / 1048576.0;
     if (mib > 10.0 && !g->force) { say(LV_ERR, "github: %.1f MiB is over the 10 MiB README media limit, it will not be shown. Shorten (Speed, Loop a live UI), shrink Size/Font, use -q 60 or mp4/webm. Output removed (--force keeps it).\n", mib); unlink(out); return 5; }

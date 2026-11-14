@@ -37,6 +37,7 @@ are left behind (tiny); delete them yourself.
 | `Speed N` | | playback speed of typing, mouse, sleeps and slides (default 2, `--speed N` on the command line) |
 | `Cut` / `CutEnd` | | frames in between are not recorded (loading screens); video time stands still |
 | `WaitFor "text" [timeout]` | | wait until the text is on screen (default 30 s, error if it never shows); pair with `Cut` |
+| `AutoCut on\|off\|MS` | | a picture that stays unchanged longer than MS (default `CFG_AUTOCUT_MS` 1500) stops costing video time; the render prints how much was cut |
 | `Feature "name"` | | starts a section; lines before the first `Feature` always run. `--feature NAME` renders only that one |
 | `PageScroll up\|down [n]` | | PageUp/PageDown keys (pagers, editors) |
 | `MouseScroll up\|down [n]` | | mouse wheel at the pointer (program must use mouse reporting) |
