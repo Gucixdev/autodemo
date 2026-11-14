@@ -17,7 +17,9 @@
 #define CFG_FPS            10      /* polling rate of the terminal while recording */
 #define CFG_FONT_PX        15      /* terminal font size in pixels */
 #define CFG_THEME          "dark"  /* default theme: a name from THEMES below */
-#define CFG_TYPE_MS        55      /* Send: ms per character (jittered +-30 %), before Speed */
+#define CFG_TYPING         "instant" /* "instant": Send shows the text at once, then pauses; "human": types char by char (`Typing human` in a script) */
+#define CFG_SEND_PAUSE_MS  650     /* instant mode: pause after each Send, before Speed */
+#define CFG_TYPE_MS        55      /* human mode: ms per character (jittered +-30 %), before Speed */
 #define CFG_MOVE_MS        500     /* MouseMove when the script gives no time */
 
 /* ---- fonts: first file that exists wins; AUTODEMO_FONT=/x.ttf overrides the terminal font ---- */

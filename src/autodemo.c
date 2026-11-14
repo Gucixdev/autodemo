@@ -25,13 +25,13 @@
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_TYPING, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"type",C_TYPE,1,2},{"key",C_KEY,1,5},{"wait",C_WAIT,1,1},
-  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},
+  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"typing",C_TYPING,1,1},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
   {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
@@ -150,6 +150,7 @@ static int parse_script(const char *path, Script *sc) {
       break;
     case C_WAIT: if (dur_ms(c.a[0], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[0]); ok = 0; } break;
     case C_SLIDE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[2]); ok = 0; } break;
+    case C_TYPING: if (strcmp(c.a[0], "instant") && strcmp(c.a[0], "human")) { fprintf(stderr, "%s:%d: typing instant|human\n", path, line); ok = 0; } break;
     case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { fprintf(stderr, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
     case C_TRANS: {
       int k = (!strcmp(c.a[0], "in") || !strcmp(c.a[0], "out") || !strcmp(c.a[0], "both")) ? 1 : 0;
@@ -386,7 +387,7 @@ typedef struct {
   /* state */
   Grid gr, prev; int have_session, dirty;
   /* quality gate */
-  int idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
+  int human, idle, realtime, dead, dead_status, peak_cells, peak_styles, nstates, ninputs, force, in_run; uint64_t last_hash; char dead_screen[2048];
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
@@ -604,7 +605,29 @@ static void render_slide(G *g, Img *S, const char *title, const char *sub) {
 static unsigned rng_state = 12345;
 static int jitter(int base) { rng_state = rng_state * 1103515245u + 12345u; return base * (70 + (rng_state >> 16) % 61) / 100; }
 
+/* instant mode: the text appears at once (newlines become Enter), then a short pause so the viewer can read it */
+static int send_instant(G *g, const char *s) {
+  char *buf = strdup(s), *seg = buf; int rc = 0;
+  for (;;) {
+    char *nl = strchr(seg, '\n'); if (nl) *nl = 0;
+    if (*seg) {
+      size_t l = strlen(seg); char *arg = malloc(l + 3); memcpy(arg, seg, l); arg[l] = 0;
+      if (l && arg[l - 1] == ';') { arg[l - 1] = '\\'; arg[l] = ';'; arg[l + 1] = 0; } /* a trailing ; would be tmux's command separator */
+      rc = TMUX("send-keys", "-t", "d", "-l", "--", arg); free(arg);
+      if (rc) break;
+    }
+    if (!nl) break;
+    rc = TMUX("send-keys", "-t", "d", "Enter"); if (rc) break;
+    seg = nl + 1;
+  }
+  free(buf);
+  if (rc) { fprintf(stderr, "autodemo: tmux send-keys failed\n"); return -1; }
+  g->idle = 0; tick(g, 40); wait_ms(g, sp(g, CFG_SEND_PAUSE_MS));
+  return 0;
+}
+
 static int send_text(G *g, const char *s, int speed) {
+  if (!g->human) return send_instant(g, s);
   for (const unsigned char *p = (const unsigned char *)s; *p;) {
     const unsigned char *q = p; utf8_next(&q);
     char ch_[8]; size_t n = q - p; memcpy(ch_, p, n); ch_[n] = 0; p = q;
@@ -718,6 +741,7 @@ static int execute(G *g, Script *sc) {
       if (g->preview) dump_ascii(g, c);
       free(A.p); free(S.p); break; }
     case C_SPEED: g->speed = atof(c->a[0]); break;
+    case C_TYPING: g->human = !strcmp(c->a[0], "human"); break;
     case C_TRANS: {
       int k = (!strcmp(c->a[0], "in") || !strcmp(c->a[0], "out") || !strcmp(c->a[0], "both")) ? 1 : 0;
       int lo = !strcmp(c->a[0], "out") ? 1 : 0, hi = !strcmp(c->a[0], "in") ? 0 : 1; /* in: [0,0]  out: [1,1]  both: [0,1] */
@@ -737,7 +761,7 @@ static int execute(G *g, Script *sc) {
 static void apply_header(G *g, Script *sc) {
   g->cols = CFG_COLS; g->rows = CFG_ROWS; g->fps = CFG_FPS; g->fontpx = CFG_FONT_PX; g->theme = 0; g->backend = 0;
   for (int k = 0; k < NTHEMES; k++) if (!strcmp(THEMES[k].name, CFG_THEME)) g->theme = k;
-  g->speed = CFG_SPEED;
+  g->speed = CFG_SPEED; g->human = !strcmp(CFG_TYPING, "human");
   for (int w = 0; w < 2; w++) { strcpy(g->trans[w], CFG_TRANSITION); g->trans_ms[w] = CFG_TRANSITION_MS; }
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];

@@ -29,7 +29,7 @@ are left behind (tiny); delete them yourself.
 | New | Old | |
 |---|---|---|
 | `Sleep 500ms` | `wait` | pause |
-| `Send "text" [ms/char]` | `type` | type text |
+| `Send "text"` | `type` | text appears at once, then a short pause (`CFG_SEND_PAUSE_MS`); `Typing human` switches to char-by-char (`Send "text" 45` = ms per char) |
 | `SendKey Enter Down C-c` | `key` | press keys |
 | `MouseMove x y [ms]` | `cursor move` | pointer to cell |
 | `MouseClick` / `MouseHide` / `MouseShow` | `cursor click/hide/show` | |
