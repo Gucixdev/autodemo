@@ -140,8 +140,12 @@ the overlay/transition/encoder stages already work on plain RGBA images.
 
 ## Source layout
 
-`src/autodemo.c` (parser, recorder, CLI) includes the rest: `src/fx/transition.c` (pure picture-blend effects), `src/fx/theme.c` (colour themes, pure data), `src/fx/anim.c` (transitions and the slide build-up on top of the recorder), `src/gui.c` (built-in Wayland compositor), `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
+`src/autodemo.c` is the core (recorder `G`, `execute`, `main`) and includes the rest:
 
-## Known gaps
-- `Window x11` (rootful Xwayland inside the built-in compositor): Xwayland starts and the program gets its `DISPLAY`, but the captured picture is still wrong (striped, no window content). Not usable yet.
-- gui backend: mouse clicks do not reach Firefox web content (keyboard does).
+- `src/fx/` - pictures and effects, no knowledge of the recorder: `transition.c` (blend effects), `theme.c` (colour themes), `draw.c` (Img + fill/disc/rrect/glow), `text.c` (FreeType fonts and text), `chrome.c` (window frame, cell grid, pointer, caption), `anim.c` (transitions and slide build-up on top of the recorder).
+- `src/parse.c` - the `.demo` script: tokenizer, `;` layer, validation.
+- `src/term.c` - ANSI text to cell grid, private tmux server.
+- `src/gate.c` - quality gate. `src/cli.c` - usage and the project commands (list/export/bulk/gen/sandbox).
+- `src/gui.c` - built-in Wayland compositor. `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
+
+Everything is one translation unit via `#include`, so the Makefile lists the files as dependencies of `src/autodemo.c`.
