@@ -1,5 +1,5 @@
 CC ?= cc
-CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
+CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
 FT = $(shell pkg-config --cflags --libs freetype2)
 WEBP = $(shell pkg-config --libs libwebp libwebpmux)
 autodemo: src/autodemo.c src/fx.c src/config.h

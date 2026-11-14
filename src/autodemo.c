@@ -219,20 +219,32 @@ static FT_Face load_face(const char *const *paths) {
   for (; *paths; paths++) if (!FT_New_Face(ft, *paths, 0, &f)) return f;
   return NULL;
 }
-static int fonts_init(int px) {
+/* "~/x" -> $HOME/x (read before the private HOME is set) */
+static FT_Face load_face_tilde(const char *const *paths) {
+  for (; *paths; paths++) {
+    char b[1024];
+    if (paths[0][0] == '~' && paths[0][1] == '/' && getenv("HOME")) snprintf(b, sizeof b, "%s%s", getenv("HOME"), *paths + 1); else snprintf(b, sizeof b, "%s", *paths);
+    FT_Face f; if (!FT_New_Face(ft, b, 0, &f)) return f;
+  }
+  return NULL;
+}
+static void face_px(FT_Face f, int px) { if (FT_IS_SCALABLE(f)) FT_Set_Pixel_Sizes(f, 0, px); else FT_Select_Size(f, 0); }
+
+static int fonts_init(int px, const Theme *th) {
   static const char *m[] = CFG_FONT_MONO, *mb[] = CFG_FONT_MONO_BOLD, *s[] = CFG_FONT_SANS, *sb[] = CFG_FONT_SANS_BOLD;
   if (FT_Init_FreeType(&ft)) return -1;
   const char *ov = getenv("AUTODEMO_FONT");
   const char *ovl[] = {ov, 0};
   fmono = ov ? load_face(ovl) : NULL;
+  if (!fmono && th->font) { fmono = load_face_tilde(th->font); if (fmono && th->font_bold) fmonob = load_face_tilde(th->font_bold); if (fmono && th->font_px) px = th->font_px; }
   if (!fmono) fmono = load_face(m);
-  fmonob = load_face(mb); fsans = load_face(s); fsansb = load_face(sb);
+  if (!fmonob) fmonob = load_face(mb); fsans = load_face(s); fsansb = load_face(sb);
   if (!fmono) return -1;
   if (!fmonob) fmonob = fmono;
   if (!fsans) fsans = fmono;
   if (!fsansb) fsansb = fsans;
   mono_px = px;
-  FT_Set_Pixel_Sizes(fmono, 0, px); FT_Set_Pixel_Sizes(fmonob, 0, px);
+  face_px(fmono, px); face_px(fmonob, px);
   if (FT_Load_Char(fmono, 'M', FT_LOAD_DEFAULT)) return -1;
   cw = (int)((fmono->glyph->advance.x + 32) >> 6);
   int asc = (int)((fmono->size->metrics.ascender + 63) >> 6), desc = (int)(-fmono->size->metrics.descender + 63) >> 6;
@@ -257,7 +269,8 @@ static int draw_glyph(Img *im, FT_Face f, uint32_t cp, int x, int bl, uint32_t c
   if (FT_Load_Char(f, cp, FT_LOAD_RENDER | FT_LOAD_TARGET_LIGHT)) return 0;
   FT_GlyphSlot g = f->glyph; FT_Bitmap *b = &g->bitmap;
   for (unsigned r = 0; r < b->rows; r++) for (unsigned c = 0; c < b->width; c++) {
-    int a = b->buffer[r * b->pitch + c] * alpha / 255;
+    int a = b->pixel_mode == FT_PIXEL_MODE_MONO ? ((b->buffer[r * b->pitch + (c >> 3)] >> (7 - (c & 7))) & 1) * alpha
+                                                : b->buffer[r * b->pitch + c] * alpha / 255;
     img_px(im, x + g->bitmap_left + (int)c, bl - g->bitmap_top + (int)r, col, a);
     if (embolden) img_px(im, x + g->bitmap_left + (int)c + 1, bl - g->bitmap_top + (int)r, col, a);
   }
@@ -435,14 +448,17 @@ static void render_layer(G *g) {
   img_fill(L, 0, 0, L->w, L->h, t->outer, 255);
   int ww = L->w - 2 * g->M, wh = L->h - 2 * g->M;
   img_fill(L, g->M + CFG_SHADOW_DX, g->M + CFG_SHADOW_DY, ww, wh, CFG_SHADOW_COLOR, CFG_SHADOW_ALPHA);
-  img_rrect(L, g->M, g->M, ww, wh, CFG_CORNER_R, t->bg, 255);
-  img_rrect(L, g->M, g->M, ww, g->TB, CFG_CORNER_R, t->bar, 255);
-  img_fill(L, g->M, g->M + g->TB - CFG_CORNER_R, ww, CFG_CORNER_R, t->bar, 255);
+  int bp = t->accent ? CFG_BORDER_PX : 0;
+  if (bp) img_rrect(L, g->M, g->M, ww, wh, CFG_CORNER_R, t->accent, 255);
+  img_rrect(L, g->M + bp, g->M + bp, ww - 2 * bp, wh - 2 * bp, CFG_CORNER_R, t->bg, 255);
+  img_rrect(L, g->M + bp, g->M + bp, ww - 2 * bp, g->TB - bp, CFG_CORNER_R, t->bar, 255);
+  img_fill(L, g->M + bp, g->M + g->TB - CFG_CORNER_R, ww - 2 * bp, CFG_CORNER_R, t->bar, 255);
+  if (bp) img_fill(L, g->M + bp, g->M + g->TB, ww - 2 * bp, 1, t->accent, 255); /* line under the title bar */
   img_disc(L, g->M + 16, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_CLOSE, 255, 0);
   img_disc(L, g->M + 36, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_MIN, 255, 0);
   img_disc(L, g->M + 56, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_MAX, 255, 0);
   int tw = text_width(fsans, CFG_TITLE_PX, g->title);
-  draw_text(L, fsans, CFG_TITLE_PX, g->M + (ww - tw) / 2, g->M + g->TB / 2 + CFG_TITLE_PX * 2 / 5, g->title, t->fg, CFG_TITLE_ALPHA);
+  draw_text(L, fsans, CFG_TITLE_PX, g->M + (ww - tw) / 2, g->M + g->TB / 2 + CFG_TITLE_PX * 2 / 5, g->title, t->accent ? t->accent : t->fg, CFG_TITLE_ALPHA);
   if (!g->have_session) return;
   Grid *gr = &g->gr;
   for (int r = 0; r < gr->rows; r++) for (int c = 0; c < gr->cols; c++) {
@@ -577,7 +593,7 @@ static void render_slide(G *g, Img *S, const char *title, const char *sub) {
   int tw = text_width(fsansb, tp, title);
   int cy = S->h / 2 - (sub && *sub ? tp / 2 : 0);
   draw_text(S, fsansb, tp, (S->w - tw) / 2, cy + tp / 3, title, t->fg, 255);
-  img_fill(S, S->w / 2 - 30, cy + tp, 60, 3, t->pal[CFG_SLIDE_ACCENT], 255);
+  img_fill(S, S->w / 2 - 30, cy + tp, 60, 3, t->accent ? t->accent : t->pal[CFG_SLIDE_ACCENT], 255);
   if (sub && *sub) {
     int sp = tp / 2 + 2, sw = text_width(fsans, sp, sub);
     draw_text(S, fsans, sp, (S->w - sw) / 2, cy + tp + sp + 20, sub, t->fg, 190);
@@ -594,7 +610,7 @@ static int send_text(G *g, const char *s, int speed) {
     char ch_[8]; size_t n = q - p; memcpy(ch_, p, n); ch_[n] = 0; p = q;
     int rc;
     if (ch_[0] == '\n') rc = TMUX("send-keys", "-t", "d", "Enter");
-    else rc = TMUX("send-keys", "-t", "d", "-l", "--", ch_);
+    else rc = TMUX("send-keys", "-t", "d", "-l", "--", ch_[0] == ';' && !ch_[1] ? "\\;" : ch_); /* a lone ; is tmux's command separator */
     if (rc) { fprintf(stderr, "autodemo: tmux send-keys failed\n"); return -1; }
     g->idle = 0;
     tick(g, ch_[0] == '\n' ? speed * 3 : jitter(speed));
@@ -908,7 +924,7 @@ int main(int argc, char **argv) {
     mkdir_p(out);
   }
   for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_WINDOW && !backend_available(sc.v[i].a[0])) return 3;
-  if (fonts_init(g->fontpx)) { fprintf(stderr, "autodemo: no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
+  if (fonts_init(g->fontpx, &THEMES[g->theme])) { fprintf(stderr, "autodemo: no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
   layout(g);
   g->preview = preview; g->sleep_scale = preview ? 0.3 : 1.0;
   g->gr = (Grid){g->cols, g->rows, 0, 0, 0, calloc(g->cols * g->rows, sizeof(Cell))};
