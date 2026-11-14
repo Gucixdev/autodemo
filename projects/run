@@ -16,7 +16,7 @@ prog() { # prog REPO PATH-TO-BINARY [-c CMD]...
   "$BIN" gen "$path" -d "$dd" "$@" || { bad=$((bad+1)); return; }
   "$BIN" render "$dd/$name.demo" -o "$dd/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
 }
-hand() { # hand NAME: render the hand-written .autodemo/examples/NAME.demo (a TUI/GUI session, not --help) next to it
+hand() { # hand NAME or REPO/NAME: render the hand-written .autodemo/examples/NAME.demo (a real session) next to it
   "$BIN" render "$AD/.autodemo/examples/$1.demo" && ok=$((ok+1)) || bad=$((bad+1))
 }
 build() { echo "== build $1"; (cd "$GH/$1" && shift && "$@") >/dev/null 2>&1 || echo "build failed in $1"; }
@@ -35,17 +35,24 @@ if [ -d "$R" ]; then
   prog notcoreutils $B/fzf      -c 'ls | fzf --filter=ma' -c 'printf "apple\nbanana\ncherry\n" | fzf --filter=an'
   prog notcoreutils $B/man      -c 'man tree | head -n 24'
   prog notcoreutils $B/notts   -c 'notts dnd status' -c 'notts --help'  # a real send needs the notification daemon, which the desktop already owns
-  # display / password / device tools: only --help + man examples (default gen, sandboxed probe), nothing interactive is run
-  for t in gtop sudo scenario cb xcb wlcb shot; do prog notcoreutils $B/$t; done
+  # (none of them: gtop gets a full hand-written demo later; sudo, scenario, cb, xcb, wlcb, shot touch the real system or need a display)
 fi
 
-# ---- bash repo: every git-tracked executable, --help only (probe runs in the sandbox) ---------------------------
+# ---- bash repo: a short overview per tool, real commands on files made in the private HOME (-s = hidden setup, -c = shown) ----
 R=$GH/bash
 if [ -d "$R/.git" ]; then
-  while IFS= read -r f; do
-    case $f in lib/*|templates/*|installer/*) continue ;; esac  # internals / need root, shown via their callers
-    prog bash "$R/$f"
-  done < <(git -C "$R" ls-files -s | awk '$1=="100755"{print $4}')
+  P='$HOME/proj'
+  prog bash $R/findfat -s "dd if=/dev/zero of=$P/big.iso bs=1M count=40 2>/dev/null && dd if=/dev/zero of=$P/src/data.bin bs=1M count=8 2>/dev/null" \
+       -c 'findfat -n 4' -c 'findfat -dir -n 2'
+  prog bash $R/todo -c 'todo "write the README"' -c 'todo "push the release"' -c 'todo ls' -c 'todo done 1' -c 'todo ls'
+  prog bash $R/trash -c 'ls' -c 'trash README.md' -c 'ls' -c 'ls ~/.local/share/Trash/files'
+  prog bash $R/morph -s "magick -size 320x200 gradient:blue-red $P/photo.png" -c 'morph -l' -c 'morph photo.png photo.webp' -c 'ls -l photo.*'
+  prog bash $R/manwriter -s "printf '#!/bin/sh\n# hello - say hello\n# usage: hello [-n N]\n' > $P/hello" -c 'manwriter hello' -c 'man -l hello.1 | head -n 8'
+  prog bash $R/metadata_cleaner -s "magick -size 160x120 gradient:green-black -set comment 'shot at 52.2N 21.0E' $P/photo.jpg" \
+       -c "identify -format '%c\n' photo.jpg" -c 'metadata_cleaner photo.jpg' -c "identify -format '[%c]\n' clean-photo.jpg"
+  prog bash $R/fixmedia -s "ffmpeg -loglevel error -f lavfi -i testsrc=size=160x120:rate=10:duration=2 -pix_fmt yuv420p $P/ok.mp4 && head -c 3000 $P/ok.mp4 > $P/broken.mp4" -c 'ls -l *.mp4' -c 'fixmedia -c ok.mp4 broken.mp4'
+  # not shown on purpose (touch the real system, need hardware, network or root): btth, wifi, cleaner, ezcontainers, flatseal, hf,
+  # gh (talks to GitHub), screenshot, scenario, sniff, logcollector, nmap, protonlauncher, comfy/*
 fi
 
 # ---- other repos. Repos that are being edited are not rebuilt here: a missing binary is reported and skipped. --------
@@ -55,8 +62,8 @@ if [ -x "$GH/frost/target/release/frost" ]; then hand frost; else echo "skip fro
 if [ -x "$GH/filem8/target/release/filem8" ]; then hand filem8; else echo "skip filem8 (not built)"; bad=$((bad+1)); fi
 
 # command line tools: --help + man examples, probe runs in the sandbox
-prog netman $GH/netman/bin/netman
-prog qlogin $GH/qlogin/bin/qlogin
+[ -x "$GH/netman/bin/netman" ] && hand netman/netman   # in a private network namespace: only a fresh loopback
+[ -x "$GH/qlogin/bin/qlogin" ] && hand qlogin/qlogin   # fake PAM + private bus, see examples/qlogin/run
 [ -x "$GH/gael/gael" ] || build gael ./build
 prog gael   $GH/gael/gael
 

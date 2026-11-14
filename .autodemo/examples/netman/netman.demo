@@ -1,0 +1,22 @@
+# netman: configure an interface, in a private network namespace (only a fresh loopback; nothing of the real network is touched or shown)
+Size 100x28
+Theme dracula
+Title "netman"
+Setup printf "PS1='\\$ '\n" > $HOME/.bashrc
+Setup printf 'export PATH=%s:$PATH\n' '/data/dev/github/netman/bin' >> $HOME/.bashrc
+Cd /tmp
+Run unshare -Urn bash -i
+Sleep 400ms
+Caption "netman: one tool for interfaces, Wi-Fi, Bluetooth, VPN, Tor" bottom
+Send "netman net list | head -n 3" 35
+SendKey Enter
+Sleep 1500ms
+Caption "bring the link up and give it an address" bottom
+Send "netman net up lo && netman net set lo 10.9.0.2/24" 35
+SendKey Enter
+Sleep 1s
+Caption "show it: addresses, link speed, live rate" bottom
+Send "netman net show lo" 35
+SendKey Enter
+Sleep 2500ms
+Loop

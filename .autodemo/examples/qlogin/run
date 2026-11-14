@@ -1,0 +1,17 @@
+#!/bin/sh
+# Starts qlogin the way tests/run_qlogin does, touching nothing real: private dbus + qlogind, a FAKE PAM stack
+# (user = you, password = "secret"), fake utmp/wtmp/lastlog. For the autodemo recording; no arguments.
+Q=${QLOGIN_DIR:-/data/dev/github/qlogin}; T=$HOME/q; ME=$(id -un)
+mkdir -p "$T/run" "$T/dev" "$T/pam" "$T/sess" "$T/var/run" "$T/var/log" "$T/home"
+: > "$T/var/run/utmp"; : > "$T/var/log/wtmp"; : > "$T/var/log/lastlog"
+printf '#!/bin/sh\np=$(tr -d "\\0\\n")\n[ "$PAM_USER" = "%s" ] && [ "$p" = "secret" ]\n' "$ME" > "$T/chk"; chmod +x "$T/chk"
+printf 'auth required pam_exec.so expose_authtok quiet %s/chk\nauth optional pam_permit.so\naccount required pam_permit.so\nsession required pam_permit.so\npassword required pam_permit.so\n' "$T" > "$T/pam/qlogin"
+printf '[Desktop Entry]\nName=Sway (demo)\nExec=true\n' > "$T/sess/sway.desktop"
+echo tty1 > "$T/vt"
+out=$(mktemp); dbus-daemon --session --print-address --fork --print-pid > "$out"
+addr=$(sed -n 1p "$out"); bpid=$(sed -n 2p "$out"); rm -f "$out"
+DBUS_SYSTEM_BUS_ADDRESS=$addr QLOGIND_RUN=$T/run QLOGIND_VTFILE=$T/vt QLOGIND_DEVDIR=$T/dev "$Q/bin/qlogind" 2>/dev/null & qpid=$!
+trap 'kill $qpid $bpid 2>/dev/null' EXIT
+for _ in $(seq 50); do busctl --address="$addr" status org.freedesktop.login1 >/dev/null 2>&1 && break; sleep 0.1; done
+clear
+QLOGIN_HOME=$T/home TERM=linux PAM_CONFIG=$T/pam QLOGIN_VAR=$T/var QLOGIN_SESSDIRS=$T/sess QLOGIN_DELAY_UNIT_MS=300 DBUS_SYSTEM_BUS_ADDRESS=$addr "$Q/bin/qlogin" "$@"
