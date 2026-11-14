@@ -16,6 +16,11 @@ prog() { # prog REPO PATH-TO-BINARY [-c CMD]...
   "$BIN" gen "$path" -d "$dd" "$@" || { bad=$((bad+1)); return; }
   "$BIN" render "$dd/$name.demo" -o "$ex/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
 }
+hand() { # hand REPO NAME: render the hand-written .autodemo/examples/NAME.demo (a TUI/GUI session, not --help)
+  local repo=$1 name=$2 ex=$AD/.autodemo/export/$1
+  mkdir -p "$ex"
+  "$BIN" render "$AD/.autodemo/examples/$name.demo" -o "$ex/$name.webp" && ok=$((ok+1)) || bad=$((bad+1))
+}
 build() { echo "== build $1"; (cd "$GH/$1" && shift && "$@") >/dev/null 2>&1 || echo "build failed in $1"; }
 
 # ---- notcoreutils ---------------------------------------------------------------------------------------------
@@ -45,9 +50,19 @@ if [ -d "$R/.git" ]; then
   done < <(git -C "$R" ls-files -s | awk '$1=="100755"{print $4}')
 fi
 
-# ---- more projects: copy the block above (R=..., build ..., prog ...) --------------------------------------------
-# R=$GH/bash;   prog bash   $R/<script>
-# R=$GH/lazytui;prog lazytui $R/bin/demo
-# lean4 and symbiote are skipped on purpose.
+# ---- other repos. Repos that are being edited are not rebuilt here: a missing binary is reported and skipped. --------
+# lazytui: C library with a demo app; frost and filem8: big interactive programs, shown by their hand-written sessions
+if [ -d "$GH/lazytui" ]; then build lazytui make; hand lazytui lazytui; fi
+if [ -x "$GH/frost/target/release/frost" ]; then hand frost frost; else echo "skip frost (not built)"; bad=$((bad+1)); fi
+if [ -x "$GH/filem8/target/release/filem8" ]; then hand filem8 filem8; else echo "skip filem8 (not built)"; bad=$((bad+1)); fi
+
+# command line tools: --help + man examples, probe runs in the sandbox
+prog netman $GH/netman/bin/netman
+prog qlogin $GH/qlogin/bin/qlogin
+[ -x "$GH/gael/gael" ] || build gael ./build
+prog gael   $GH/gael/gael
+
+# no demo on purpose: vecindex (library + server, tests only), openapi (MCP server, python), steamdeck_launcher (iced window,
+# not run on a real Deck yet), symbiote and lean4 (skipped by decision).
 
 echo "done: $ok rendered, $bad skipped/failed -> $AD/.autodemo/export/"
