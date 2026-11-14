@@ -5,9 +5,6 @@ Title "ls"
 Setup printf "PS1='\\$ '\n" > $HOME/.bashrc
 Setup mkdir -p $HOME/proj/src && touch $HOME/proj/README.md $HOME/proj/Makefile $HOME/proj/src/main.c
 Cd /tmp
-Transition in zoom 400ms
-Transition out fade 300ms
-Slide "ls" "list directory contents" 1500ms
 Run bash -i
 Caption "Colorful listing, one command" bottom
 Sleep 500ms

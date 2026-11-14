@@ -3,7 +3,6 @@ Size 140x38
 Theme dark
 Title "gtop"
 Cd /tmp
-Slide "gtop" "a tiny top" 1500ms
 Run $AUTODEMO_ROOT/bin/gtop
 Sleep 2s
 Caption "Live processes" bottom
