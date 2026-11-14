@@ -1005,6 +1005,7 @@ static int usage(void) {
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
                   "       autodemo export NAME[:FEATURE].fmt... [--split]   (NAME from .autodemo/examples; --split = one file per Feature)\n"
+                  "       autodemo gen PROGRAM         (write .demo from --help + man EXAMPLES);  autodemo auto PROGRAM = gen + render\n"
                   "       autodemo features X.demo     (list the Feature sections)\n"
                   "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
                   "  no -o: writes .autodemo/export/NAME.<CFG_FORMAT> next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless, 1..100 = lossy; default CFG_QUALITY quality\n");
@@ -1062,6 +1063,7 @@ static int one(const char *self, const char *root, const char *op, const char *n
 }
 static int is_fmt(const char *f) { return !strcmp(f, "webp") || !strcmp(f, "mp4") || !strcmp(f, "webm"); }
 
+#include "gen.c"
 static int project_cmd(const char *self, int argc, char **argv) {
   const char *m = argv[1];
   char root[1024];
@@ -1112,6 +1114,11 @@ static int project_cmd(const char *self, int argc, char **argv) {
 static double cli_speed;
 
 int main(int argc, char **argv) {
+  if (argc == 3 && (!strcmp(argv[1], "gen") || !strcmp(argv[1], "auto"))) {
+    char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
+    if (l <= 0) { perror("readlink"); return 1; }
+    self[l] = 0; return gen_cmd(self, argv[2], argv[1][0] == 'a');
+  }
   if (argc >= 2 && (!strcmp(argv[1], "export") || !strcmp(argv[1], "bulk") || !strcmp(argv[1], "list"))) {
     char self[1024]; ssize_t l = readlink("/proc/self/exe", self, sizeof self - 1);
     if (l <= 0) { perror("readlink"); return 1; }

@@ -57,6 +57,14 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
 | `Feature "name"` | section; lines before the first Feature always run; `--feature NAME` renders one, `--split` one file each |
 | `AutoCut on\|off\|MS` | a picture unchanged for longer than MS (default `CFG_AUTOCUT_MS`) stops costing video time |
 
+## gen / auto (demo without writing a script)
+
+`autodemo gen PROGRAM` (name or path) writes a normal `.demo`: a fixture project in the private HOME, the `--help` screen and up to
+3 commands from the man page EXAMPLES section. It never overwrites a hand-written demo. Man examples are filtered hard: only
+relative, local commands (no absolute paths, hosts, URLs, variables, `sudo`, `rm`, `-exec`, redirects), so often the result is just
+the help screen. **Nothing is sandboxed yet**: the demo runs with your real filesystem and only `$HOME` is private, so read the
+generated file before rendering anything you did not write yourself.
+
 ## GUI backend
 
 `Window gui` + `Size 900x560` (pixels) + `Run PROGRAM`: autodemo listens on its own Wayland socket (private HOME, never your
@@ -88,6 +96,8 @@ Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when pipe
     ./autodemo preview x.demo
     ./autodemo features x.demo             # list Feature names
     ./autodemo render  x.demo --feature NAME | --split   # one feature, or one file per feature
+    ./autodemo gen  PROGRAM                # write .autodemo/examples/NAME.demo from --help + man EXAMPLES (plain text, edit it)
+    ./autodemo auto PROGRAM                # gen + render, prints the README line
     ./autodemo export  ls.mp4 gtop features:page-scroll.webp         # NAME.fmt from .autodemo/examples -> .autodemo/export
     ./autodemo bulk export mp4 [NAME...]   # every demo (or the listed ones); GUI/web demos are skipped
     ./autodemo bulk check | preview | clean | list
