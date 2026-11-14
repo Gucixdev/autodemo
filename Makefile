@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 FT = $(shell pkg-config --cflags --libs freetype2)
 WEBP = $(shell pkg-config --libs libwebp libwebpmux)
-autodemo: src/autodemo.c
+autodemo: src/autodemo.c src/fx.c src/config.h
 	nice -n 19 $(CC) $(CFLAGS) -o $@ $< $(FT) $(WEBP) -lm
 test: autodemo
 	sh test/run

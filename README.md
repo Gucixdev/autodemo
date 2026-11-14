@@ -1,11 +1,3 @@
-####edit 
-dodac efekty fx animacje etc by robilo wrazenie 
-
-
-
-
-
-
 # autodemo
 
 Scripted, non-interactive demo recorder for GitHub READMEs. You write a small `*.demo` script,
@@ -71,7 +63,8 @@ Timeline commands:
     wait 500ms | 2s
     caption "text" [top|bottom]  persistent overlay until `caption off`
     slide "title" ["subtitle" [2s]]
-    transition fade|slide|none [300ms]   used when entering/leaving slides
+    transition NAME [300ms]      effect when entering/leaving slides: none fade slide slide-left slide-right slide-up
+                                 slide-down zoom zoom-out wipe (src/fx.c; defaults in src/config.h)
     cursor move X Y [ms]         simulated mouse pointer, X Y in cells, eased
     cursor click                 ripple + SGR mouse press/release sent to apps that enabled mouse reporting
     cursor hide | show

@@ -16,6 +16,7 @@
 #include FT_FREETYPE_H
 #include <webp/encode.h>
 #include <webp/mux.h>
+#include "fx.c"
 
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
@@ -129,7 +130,7 @@ static int parse_script(const char *path, Script *sc) {
     case C_WAIT: if (dur_ms(c.a[0], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[0]); ok = 0; } break;
     case C_SLIDE: if (c.n == 3 && dur_ms(c.a[2], &ms)) { fprintf(stderr, "%s:%d: bad duration '%s'\n", path, line, c.a[2]); ok = 0; } break;
     case C_TRANS:
-      if (strcmp(c.a[0], "fade") && strcmp(c.a[0], "slide") && strcmp(c.a[0], "none")) { fprintf(stderr, "%s:%d: transition fade|slide|none\n", path, line); ok = 0; }
+      if (fx_parse(c.a[0]) < 0) { fprintf(stderr, "%s:%d: transition %s\n", path, line, fx_list()); ok = 0; }
       if (c.n == 2 && dur_ms(c.a[1], &ms)) { fprintf(stderr, "%s:%d: bad duration\n", path, line); ok = 0; }
       break;
     case C_CAPTION:
@@ -358,7 +359,7 @@ typedef struct {
   Img layer, last, frame; int have_last;
   char caption[256]; int cap_top;
   int ptr_on; double px, py; int ripple;
-  char trans[8]; int trans_ms;
+  char trans[16]; int trans_ms;
   long T; double sleep_scale; int preview;
   /* sinks */
   WebPAnimEncoder *enc; WebPAnimEncoderOptions eopt; WebPConfig wcfg; int lossy;
@@ -493,25 +494,14 @@ static void wait_ms(G *g, int ms) {
 
 /* ---- transitions ---- */
 static void transition(G *g, const Img *A, const Img *B) {
-  if (!strcmp(g->trans, "none") || g->trans_ms <= 0) { put(g, B, 0); return; }
-  int n = g->trans_ms / 40; if (n < 1) n = 1;
-  Img M = img_new(A->w, A->h); size_t sz = (size_t)A->w * A->h * 4;
+  int fx = fx_parse(g->trans);
+  if (fx <= FX_NONE || g->trans_ms <= 0) { put(g, B, 0); return; }
+  int n = g->trans_ms / CFG_FX_STEP_MS; if (n < 1) n = 1;
+  Img M = img_new(A->w, A->h);
   for (int i = 1; i <= n; i++) {
     double u = (double)i / n; u = u * u * (3 - 2 * u);
-    if (!strcmp(g->trans, "fade")) {
-      int a = (int)(u * 256);
-      for (size_t k = 0; k < sz; k++) M.p[k] = (A->p[k] * (256 - a) + B->p[k] * a) >> 8;
-    } else {
-      int off = (int)((1 - u) * A->w);
-      for (int y = 0; y < A->h; y++) {
-        uint8_t *row = M.p + (size_t)y * A->w * 4; const uint8_t *ar = A->p + (size_t)y * A->w * 4, *br = B->p + (size_t)y * A->w * 4;
-        /* A slides out to the left, B enters from the right */
-        int keep = off; /* columns of A still visible */
-        memcpy(row, ar + (size_t)(A->w - keep) * 4, (size_t)keep * 4);
-        memcpy(row + (size_t)keep * 4, br, (size_t)(A->w - keep) * 4);
-      }
-    }
-    put(g, &M, 40);
+    fx_blend(M.p, A->p, B->p, A->w, A->h, fx, u);
+    put(g, &M, CFG_FX_STEP_MS);
   }
   free(M.p);
 }
@@ -640,7 +630,7 @@ static int execute(G *g, Script *sc) {
       snprintf(g->caption, sizeof g->caption, "%s", !strcmp(c->a[0], "off") ? "" : c->a[0]);
       g->cap_top = c->n > 1 && !strcmp(c->a[1], "top"); g->dirty = 1; tick(g, 150); break;
     case C_SLIDE: {
-      ms = 2000; if (c->n == 3) dur_ms(c->a[2], &ms);
+      ms = CFG_SLIDE_MS; if (c->n == 3) dur_ms(c->a[2], &ms);
       if (g->have_session) capture(g);
       compose(g); Img A = img_new(g->W, g->H); memcpy(A.p, g->frame.p, (size_t)g->W * g->H * 4);
       Img S = img_new(g->W, g->H); render_slide(g, &S, c->a[0], c->n > 1 ? c->a[1] : "");
@@ -649,7 +639,7 @@ static int execute(G *g, Script *sc) {
       compose(g); transition(g, &S, &g->frame); g->dirty = 1;
       if (g->preview) dump_ascii(g, c);
       free(A.p); free(S.p); break; }
-    case C_TRANS: snprintf(g->trans, sizeof g->trans, "%s", c->a[0]); g->trans_ms = 300; if (c->n == 2) dur_ms(c->a[1], &g->trans_ms); break;
+    case C_TRANS: snprintf(g->trans, sizeof g->trans, "%s", c->a[0]); g->trans_ms = CFG_TRANSITION_MS; if (c->n == 2) dur_ms(c->a[1], &g->trans_ms); break;
     case C_CMOVE: ms = 500; if (c->n == 3) dur_ms(c->a[2], &ms); pointer_move(g, atof(c->a[0]), atof(c->a[1]), ms); break;
     case C_CCLICK: if (!g->ptr_on) { fprintf(stderr, "line %d: click before cursor move\n", c->line); return -1; } pointer_click(g); break;
     case C_CHIDE: g->ptr_on = 0; g->dirty = 1; tick(g, 50); break;
@@ -662,7 +652,7 @@ static int execute(G *g, Script *sc) {
 
 static void apply_header(G *g, Script *sc) {
   g->cols = 100; g->rows = 30; g->fps = 10; g->fontpx = 15; g->theme = 0; g->backend = 0;
-  strcpy(g->trans, "fade"); g->trans_ms = 300;
+  strcpy(g->trans, CFG_TRANSITION); g->trans_ms = CFG_TRANSITION_MS;
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];
     switch (c->op) {
@@ -685,7 +675,7 @@ static long estimate_ms(Script *sc) {
     Cmd *c = &sc->v[i];
     switch (c->op) {
     case C_WAIT: dur_ms(c->a[0], &ms); t += ms; break;
-    case C_SLIDE: ms = 2000; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms + 600; break;
+    case C_SLIDE: ms = CFG_SLIDE_MS; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms + 600; break;
     case C_TYPE: t += (long)strlen(c->a[0]) * (c->n > 1 ? atoi(c->a[1]) : 55); break;
     case C_KEY: t += 120 * c->n; break;
     case C_CMOVE: ms = 500; if (c->n == 3) dur_ms(c->a[2], &ms); t += ms; break;
