@@ -31,7 +31,7 @@ if [ -d "$R" ]; then
   prog notcoreutils $B/netcat   -c '(echo hello from netcat | netcat -l 9000 &) ; sleep 1 ; netcat localhost 9000'
   prog notcoreutils $B/fzf      -c 'ls | fzf --filter=ma' -c 'printf "apple\nbanana\ncherry\n" | fzf --filter=an'
   prog notcoreutils $B/man      -c 'man tree | head -n 24'
-  prog notcoreutils $B/notts    -c 'notts send -u critical "build failed" "see the log"' -c 'notts history 3'
+  prog notcoreutils $B/notts   -c 'notts dnd status' -c 'notts --help'  # a real send needs the notification daemon, which the desktop already owns
   # display / password / device tools: only --help + man examples (default gen, sandboxed probe), nothing interactive is run
   for t in gtop sudo scenario cb xcb wlcb shot; do prog notcoreutils $B/$t; done
 fi

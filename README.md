@@ -141,3 +141,7 @@ the overlay/transition/encoder stages already work on plain RGBA images.
 ## Source layout
 
 `src/autodemo.c` (parser, recorder, CLI) includes the rest: `src/fx/transition.c` (pure picture-blend effects), `src/fx/theme.c` (colour themes, pure data), `src/fx/anim.c` (transitions and the slide build-up on top of the recorder), `src/gui.c` (built-in Wayland compositor), `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
+
+## Known gaps
+- `Window x11` (rootful Xwayland inside the built-in compositor): Xwayland starts and the program gets its `DISPLAY`, but the captured picture is still wrong (striped, no window content). Not usable yet.
+- gui backend: mouse clicks do not reach Firefox web content (keyboard does).
