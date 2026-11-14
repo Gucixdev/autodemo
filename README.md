@@ -4,7 +4,7 @@ Scripted, non-interactive demo recorder for GitHub READMEs. You write a small `*
 autodemo drives the program (typed keys, simulated mouse pointer, captions, slides, transitions)
 and renders an **animated WebP** (or mp4/webm). Written in C, links freetype + libwebp.
 
-![ls demo](docs/ls.webp)
+![ls demo](.autodemo/export/ls.webp)
 
 ## Status (honest)
 
@@ -28,8 +28,11 @@ are left behind (tiny); delete them yourself.
 
     make
     ./autodemo check   x.demo
-    ./autodemo render  x.demo -o out.webp [-q N] [--snap MS frame.ppm] [-v]
+    ./autodemo render  x.demo [-o out.webp|mp4|webm] [-q N] [--snap MS frame.ppm] [-v]
     ./autodemo preview x.demo
+
+Layout: demos live in `.autodemo/examples/*.demo`; `render x.demo` with no `-o` (or `-o mp4`) writes
+`.autodemo/export/x.<fmt>` and creates the directories.
 
 `-q 0` (default) is lossless; terminal frames are flat colour so lossless is already about as small
 as lossy. `.mp4`/`.webm` output goes through ffmpeg. `--snap` dumps the frame shown at MS as PPM
@@ -73,9 +76,9 @@ Timeline commands:
 
 | demo | size | length |
 |---|---|---|
-| examples/ls.demo (80x16) | ~46 KiB | 8.9 s |
-| examples/frost.demo (100x28) | ~22 KiB | 5.6 s |
-| examples/lazytui.demo (110x34, constantly animating UI) | ~550 KiB (webm VP9: ~290 KiB) | 10.5 s |
+| .autodemo/examples/ls.demo (80x16) | ~46 KiB | 8.9 s |
+| .autodemo/examples/frost.demo (100x28) | ~22 KiB | 5.6 s |
+| .autodemo/examples/lazytui.demo (110x34, constantly animating UI) | ~550 KiB (webm VP9: ~290 KiB) | 10.5 s |
 
 Static-ish terminals compress to tiny files because only changed regions of changed frames are stored;
 a UI that animates every frame is the worst case.

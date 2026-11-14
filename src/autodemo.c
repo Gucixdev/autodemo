@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <webp/encode.h>
@@ -687,11 +688,19 @@ static long estimate_ms(Script *sc) {
 }
 
 static int usage(void) {
-  fprintf(stderr, "usage: autodemo render X.demo -o OUT.(webp|mp4|webm) [-q N] [-v] [--snap MS FILE.ppm]\n"
+  fprintf(stderr, "usage: autodemo render X.demo [-o OUT.(webp|mp4|webm)|FORMAT] [-q N] [-v] [--snap MS FILE.ppm]\n"
                   "       autodemo preview X.demo      (run and dump key screens as ASCII)\n"
                   "       autodemo check X.demo        (validate the script)\n"
-                  "  -q N   webp: 0 = lossless (default), 1..100 = lossy quality\n");
+                  "  no -o: writes .autodemo/export/NAME.webp next to .autodemo/examples (dirs are created)\n  -q N   webp: 0 = lossless (default), 1..100 = lossy quality\n");
   return 2;
+}
+
+static const char *fmt_ext;
+
+/* create the parent directories of a file path */
+static void mkdir_p(const char *path) {
+  char t[1024]; snprintf(t, sizeof t, "%s", path);
+  for (char *p = t + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(t, 0755); *p = '/'; }
 }
 
 int main(int argc, char **argv) {
@@ -714,7 +723,24 @@ int main(int argc, char **argv) {
   }
   int render = !strcmp(mode, "render"), preview = !strcmp(mode, "preview");
   if (!render && !preview) return usage();
-  if (render && !out) return usage();
+  char outbuf[1024];
+  if (render) {
+    if (out && (!strcmp(out, "webp") || !strcmp(out, "mp4") || !strcmp(out, "webm"))) { /* bare format name */
+      snprintf(outbuf, sizeof outbuf, "%s", out); out = NULL; fmt_ext = strdup(outbuf);
+    }
+    if (!out) { /* convention: <project>/.autodemo/export/<name>.<fmt>, project = parent of .autodemo/examples */
+      char dir[1024], base[256]; snprintf(dir, sizeof dir, "%s", in);
+      char *sl = strrchr(dir, '/'); const char *bn = sl ? sl + 1 : dir; if (sl) *sl = 0; else strcpy(dir, ".");
+      snprintf(base, sizeof base, "%s", bn); char *dot = strrchr(base, '.'); if (dot) *dot = 0;
+      size_t dl = strlen(dir); const char *tail = "/examples";
+      if (dl >= strlen(tail) && !strcmp(dir + dl - strlen(tail), tail)) dir[dl - strlen(tail)] = 0; /* .autodemo */
+      else { strncat(dir, "/.autodemo", sizeof dir - strlen(dir) - 1); }
+      snprintf(outbuf, sizeof outbuf, "%s/export/%s.%s", dir, base, fmt_ext ? fmt_ext : "webp"); out = outbuf;
+    } else if (!strrchr(strrchr(out, '/') ? strrchr(out, '/') : out, '.')) {
+      snprintf(outbuf, sizeof outbuf, "%s.webp", out); fprintf(stderr, "autodemo: no extension in -o, writing %s\n", outbuf); out = outbuf;
+    }
+    mkdir_p(out);
+  }
   for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_WINDOW && !backend_available(sc.v[i].a[0])) return 1;
   if (fonts_init(g->fontpx)) { fprintf(stderr, "autodemo: no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
   layout(g);
