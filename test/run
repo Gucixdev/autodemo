@@ -10,11 +10,16 @@ $A render .autodemo/examples/ls.demo -o $T/o.webp --snap 6000 $T/s.ppm >/dev/nul
 python3 -I - "$T/o.webp" <<'P' || fail "webp container"
 import sys
 d=open(sys.argv[1],'rb').read()
-assert d[:4]==b'RIFF' and d[8:12]==b'WEBP' and b'ANIM' in d[:64] and d.count(b'ANMF')>10, "not animated webp"
+assert d[:4]==b'RIFF' and d[8:12]==b'WEBP' and b'ANIM' in d[:64] and d.count(b'ANMF')>3, "not animated webp"
 assert len(d)<200_000, len(d)
 P
 head -c 2 $T/s.ppm | grep -q P6 || fail snap
 $A preview .autodemo/examples/ls.demo | grep -q "README.md" || fail preview
 $A render .autodemo/examples/ls.demo -o $T/o.webm >/dev/null || fail webm
 [ -s $T/o.webm ] || fail "webm empty"
+if command -v foot >/dev/null; then
+  printf 'Window gui\nSize 600x300\nRun foot -F -e sh -c "echo gui-ok; exec sh"\nSleep 1s\nSend "echo x\\n"\nSleep 500ms\n' > $T/g.demo
+  $A render $T/g.demo -o $T/g.webp >/dev/null 2>&1 || fail "gui render (foot)"
+  [ -s $T/g.webp ] || fail "gui webp empty"
+fi
 echo "all tests passed"

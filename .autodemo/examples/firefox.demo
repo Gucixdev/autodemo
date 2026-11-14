@@ -1,8 +1,15 @@
-# firefox (web): needs the web/gui backend
-Window web
-Size 120x36
+# firefox in the built-in compositor (private HOME = fresh profile, shm rendering)
+Window gui
+Size 1000x640
 Title "firefox"
-Run flatpak run org.mozilla.firefox
+Run flatpak run --socket=wayland --env=GSK_RENDERER=cairo --env=MOZ_WEBRENDER=0 org.mozilla.firefox --no-remote about:blank
 Sleep 3s
-Caption "browsing" bottom
+Caption "Real Firefox, no screen needed" bottom
+MouseMove 486 342 800ms
+MouseClick
 Sleep 2s
+SendKey C-l
+Send "example.org\n"
+Sleep 3s
+MouseScroll down 3
+Sleep 1s

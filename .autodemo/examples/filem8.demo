@@ -1,8 +1,13 @@
-# filem8 (GUI file manager): needs the gui backend
+# filem8 (GUI file manager) in the built-in compositor
 Window gui
-Size 120x36
+Size 900x560
 Title "filem8"
+Env FM8_BACKEND=soft
 Run /data/dev/github/filem8/target/release/filem8
 Sleep 2s
 Caption "filem8" bottom
-Sleep 2s
+MouseMove 300 200 700ms
+MouseClick
+Sleep 1500ms
+SendKey Down*3
+Sleep 1s

@@ -15,8 +15,7 @@ and renders an **animated WebP** (or mp4/webm). Written in C, links freetype + l
 | Animated WebP (libwebp anim encoder, frame dedup, lossless or lossy) | done |
 | mp4 / webm via ffmpeg | done (needs ffmpeg) |
 | `preview` (ASCII key screens) | done |
-| GUI backend (headless Wayland compositor + wtype + grim) | NOT implemented; `window gui` errors out |
-| Web backend (headless Firefox screenshots) | NOT implemented; `window web` errors out |
+| GUI backend (`Window gui`): tiny headless Wayland compositor built into the binary, no external tools | works with foot, filem8 (`FM8_BACKEND=soft`); Firefox renders and takes keys, mouse clicks in its web content are NOT yet received |
 | Emacs mode | not started; the format is plain line-based on purpose |
 
 Limits: wide (CJK) glyphs take one cell, no italics, no blinking cursor, no bold face for
@@ -37,7 +36,7 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
     }
 
 **Header** (whole demo, position does not matter): `Size 100x30` (cells), `Theme dark|light|dracula|matrix`,
-`Font 15`, `Fps 10`, `Title "text"`, `Window tui` (gui/web not implemented yet), `Env KEY=VALUE`, `Cd DIR`,
+`Font 15`, `Fps 10`, `Title "text"`, `Window tui|gui`, `Env KEY=VALUE`, `Cd DIR`,
 `Setup SHELL-CMD` (prepare fixtures in the private HOME), `Loop` (loop forever; default plays once),
 `Speed N`, `Typing instant|human`, `AutoCut on|off|MS`, `Transition [in|out|both] EFFECT [ms]`.
 
@@ -57,6 +56,14 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
 | `Cut` / `CutEnd`, `WaitFor "text" [timeout]` | drop loading screens from the video; wait until text is on screen (default 30 s) |
 | `Feature "name"` | section; lines before the first Feature always run; `--feature NAME` renders one, `--split` one file each |
 | `AutoCut on\|off\|MS` | a picture unchanged for longer than MS (default `CFG_AUTOCUT_MS`) stops costing video time |
+
+## GUI backend
+
+`Window gui` + `Size 900x560` (pixels) + `Run PROGRAM`: autodemo listens on its own Wayland socket (private HOME, never your
+compositor), the program draws into shared-memory buffers, autodemo composites them and injects keys, pointer and wheel
+events itself. Only libc, works the same under Wayland and Xorg. Limits: software (wl_shm) rendering only (the child gets
+`GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1`, `DISPLAY` is unset), one toplevel, no popups, no XWayland, US key layout,
+no `WaitFor` (use `Sleep`), real-time capture. Knobs: `CFG_GUI_W/H/WAIT_MS/SETTLE_MS`. `AUTODEMO_WL_TRACE=1` prints requests.
 
 ## config.h
 

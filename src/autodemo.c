@@ -232,7 +232,7 @@ static int parse_script(const char *path, Script *sc) {
     case C_CAPTION:
       if (c.n >= 2 && strcmp(c.a[1], "top") && strcmp(c.a[1], "bottom")) { say(LV_ERR, "%s:%d: caption position top|bottom\n", path, line); ok = 0; }
       break;
-    case C_SIZE: { int w, h; if (sscanf(c.a[0], "%dx%d", &w, &h) != 2 || w < 10 || h < 3 || w > 400 || h > 200) { say(LV_ERR, "%s:%d: size WxH (cells)\n", path, line); ok = 0; } break; }
+    case C_SIZE: { int w, h; if (sscanf(c.a[0], "%dx%d", &w, &h) != 2 || w < 10 || h < 3 || w > 4000 || h > 4000) { say(LV_ERR, "%s:%d: size WxH (cells; pixels for Window gui)\n", path, line); ok = 0; } break; }
     case C_WINDOW:
       if (strcmp(c.a[0], "tui") && strcmp(c.a[0], "gui") && strcmp(c.a[0], "web")) { say(LV_ERR, "%s:%d: window tui|gui|web\n", path, line); ok = 0; }
       break;
@@ -454,7 +454,7 @@ static int tmux(char *out_[], char **out) { /* NULL-terminated argv after the co
 /* ---------------------------------------------------------- recorder ---- */
 typedef struct {
   /* config */
-  int cols, rows, fps, fontpx, loop, theme, backend; char title[128];
+  int cols, rows, fps, fontpx, loop, theme, backend, gui, size_set, page_new; char title[128]; Img page;
   char env[16][256]; int nenv; char cwd[512];
   /* canvas */
   int W, H, M, TB, PAD, tx0, ty0;
@@ -481,6 +481,8 @@ static void msleep(G *g, int ms) {
   ms = (int)(ms * g->sleep_scale);
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L}; nanosleep(&ts, NULL);
 }
+static void tick(G *g, int ms); static void wait_ms(G *g, int ms); static int sp(G *g, int ms); static int jitter(int base); static void render_layer(G *g);
+#include "gui.c"
 static void write_ppm(const Img *im, const char *path) {
   FILE *f = fopen(path, "wb"); if (!f) return;
   fprintf(f, "P6\n%d %d\n255\n", im->w, im->h);
@@ -525,6 +527,7 @@ static void layout(G *g) {
   const Theme *t = &THEMES[g->theme];
   g->M = CFG_MARGIN; g->TB = CFG_TITLEBAR_H; g->PAD = CFG_PADDING;
   g->W = g->cols * cw + 2 * g->PAD + 2 * g->M; g->H = g->rows * ch + 2 * g->PAD + g->TB + 2 * g->M;
+  if (g->gui) { g->PAD = 0; g->W = g->cols + 2 * g->M; g->H = g->rows + g->TB + 2 * g->M; } /* gui: cols x rows are pixels */
   g->W += g->W & 1; g->H += g->H & 1;
   g->tx0 = g->M + g->PAD; g->ty0 = g->M + g->TB + g->PAD;
   (void)t;
@@ -545,6 +548,7 @@ static void render_layer(G *g) {
   img_disc(L, g->M + 56, g->M + g->TB / 2, CFG_DOT_R, CFG_DOT_MAX, 255, 0);
   int tw = text_width(fsans, CFG_TITLE_PX, g->title);
   draw_text(L, fsans, CFG_TITLE_PX, g->M + (ww - tw) / 2, g->M + g->TB / 2 + CFG_TITLE_PX * 2 / 5, g->title, t->accent ? t->accent : t->fg, CFG_TITLE_ALPHA);
+  if (g->gui) { gui_blit(g); return; }
   if (!g->have_session) return;
   Grid *gr = &g->gr;
   for (int r = 0; r < gr->rows; r++) for (int c = 0; c < gr->cols; c++) {
@@ -613,6 +617,7 @@ static int gate_verdict(G *g) {
   if (g->dead && g->dead_status != 0) {
     { say(LV_ERR, "the program died (exit status %d). Last screen:\n", g->dead_status); char *ds = g->dead_screen; size_t dl = strlen(ds); while (dl && isspace((unsigned char)ds[dl - 1])) ds[--dl] = 0; while (*ds == '\n') ds++; if (*ds) fprintf(stderr, "%s%s%s\n", color_on > 0 ? "\033[2m" : "", ds, color_on > 0 ? "\033[0m" : ""); } err++;
   }
+  if (g->gui) { fill = 100; g->peak_styles = 99; }  /* pictures: no cell statistics */
   if (fill < CFG_GATE_EMPTY_PCT) { say(LV_ERR, "the screen is practically empty (peak %.1f%% of cells non-blank), nothing to show\n", fill); err++; }
   else if (fill < CFG_GATE_SPARSE_PCT) say(LV_WARN, "sparse screen (peak %.1f%% of cells non-blank); the demo may not show what the program looks like\n", fill);
   if (g->ninputs && g->nstates <= 1) { say(LV_ERR, "%d input(s) sent but the screen never changed\n", g->ninputs); err++; }
@@ -622,6 +627,7 @@ static int gate_verdict(G *g) {
 }
 
 static int capture(G *g) {
+  if (g->gui) return gui_capture(g);
   char *out = NULL;
   int rc = tmux((char *[]){"capture-pane", "-p", "-e", "-t", "d", ";", "display-message", "-p", "-t", "d", "@@CUR@@ #{cursor_x} #{cursor_y} #{cursor_flag} #{pane_dead} #{pane_dead_status}", NULL}, &out);
   if (rc || !out) { free(out); return -1; }
@@ -748,6 +754,7 @@ static int send_instant(G *g, const char *s) {
 }
 
 static int send_text(G *g, const char *s, int speed) {
+  if (g->gui) return gui_text(g, s, speed);
   if (!g->human) return send_instant(g, s);
   for (const unsigned char *p = (const unsigned char *)s; *p;) {
     const unsigned char *q = p; utf8_next(&q);
@@ -762,6 +769,7 @@ static int send_text(G *g, const char *s, int speed) {
   return 0;
 }
 static int send_key(G *g, const char *spec) {
+  if (g->gui) return gui_key(g, spec);
   g->idle = 0;
   char b[64]; strncpy(b, spec, 63); b[63] = 0; int rep = 1;
   char *star = strchr(b, '*'); if (star) { *star = 0; rep = atoi(star + 1); }
@@ -804,6 +812,7 @@ static int grid_has(G *g, const char *needle) {
 
 /* PageScroll: PageUp/PageDown keys to the program (pagers, editors, TUIs) */
 static int page_scroll(G *g, int up, int n) {
+  if (g->gui) { for (int i = 0; i < n; i++) { if (gui_key(g, up ? "PageUp" : "PageDown")) return -1; wait_ms(g, sp(g, CFG_SCROLL_PAUSE_MS)); } return 0; }
   for (int i = 0; i < n; i++) {
     if (TMUX("send-keys", "-t", "d", up ? "PageUp" : "PageDown")) { say(LV_ERR, "tmux send-keys failed\n"); return -1; }
     g->idle = 0; tick(g, 120); wait_ms(g, sp(g, CFG_SCROLL_PAUSE_MS));
@@ -812,6 +821,7 @@ static int page_scroll(G *g, int up, int n) {
 }
 /* MouseScroll: wheel notches (SGR mouse reporting) at the pointer cell, or the screen centre; the program must have mouse reporting on */
 static int mouse_scroll(G *g, int up, int n) {
+  if (g->gui) return gui_wheel(g, up, n);
   int col = g->cols / 2, row = g->rows / 2;
   if (g->ptr_on) { col = (int)((g->px - g->tx0) / cw); row = (int)((g->py - g->ty0) / ch); }
   if (col < 0) col = 0; if (row < 0) row = 0; if (col >= g->cols) col = g->cols - 1; if (row >= g->rows) row = g->rows - 1;
@@ -825,6 +835,7 @@ static int mouse_scroll(G *g, int up, int n) {
 }
 
 static void pointer_move(G *g, double cx, double cy, int ms) {
+  if (g->gui) { gui_move(g, cx, cy, ms); return; }
   double tx = g->tx0 + cx * cw + cw / 2, ty = g->ty0 + cy * ch + ch / 3;
   if (!g->ptr_on) { g->ptr_on = 1; g->px = tx + 60; g->py = ty + 40; }
   double sx = g->px, sy = g->py; int n = ms / 40; if (n < 1) n = 1;
@@ -834,6 +845,7 @@ static void pointer_move(G *g, double cx, double cy, int ms) {
   }
 }
 static void pointer_click(G *g) {
+  if (g->gui) { gui_click(g); return; }
   int col = (int)((g->px - g->tx0) / cw), row = (int)((g->py - g->ty0) / ch);
   if (col >= 0 && row >= 0 && col < g->cols && row < g->rows) { /* SGR mouse press+release for apps that enabled mouse reporting */
     char seq[64]; snprintf(seq, sizeof seq, "\033[<0;%d;%dM\033[<0;%d;%dm", col + 1, row + 1, col + 1, row + 1);
@@ -873,15 +885,13 @@ static int start_session(G *g, const char *cmd) {
  * (gui/web). Only tui is implemented; gui = headless wlroots compositor + wtype + grim,
  * web = headless Firefox screenshots. They are selected with `window gui|web`. */
 static int backend_available(const char *name) {
-  if (!strcmp(name, "tui")) return 1;
-  say(LV_ERR, "window %s backend is not implemented yet (phase 2, see README)\n", name);
-  return 0;
+  (void)name; return 1; /* gui and web are the same: a real program in the built-in compositor */
 }
 
 /* ------------------------------------------------------------- main ---- */
 static void dump_ascii(G *g, const Cmd *c) {
   printf("--- t=%.1fs line %d: %s %s\n", g->T / 1000.0, c->line, c->op == C_RUN ? "run" : c->op == C_SLIDE ? "slide" : "wait", c->a[0] ? c->a[0] : "");
-  if (!g->have_session) return;
+  if (!g->have_session || g->gui) return;
   for (int r = 0; r < g->gr.rows; r++) {
     int last = g->gr.cols - 1; while (last >= 0 && g->gr.c[r * g->gr.cols + last].cp <= ' ') last--;
     for (int k = 0; k <= last; k++) put_utf8(stdout, g->gr.c[r * g->gr.cols + k].cp ? g->gr.c[r * g->gr.cols + k].cp : ' ');
@@ -901,13 +911,14 @@ static int execute(G *g, Script *sc) {
     case C_PSCROLL: g->ninputs++; if (page_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 1)) return -1; break;
     case C_MSCROLL: g->ninputs++; if (mouse_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 3)) return -1; break;
     case C_WAITFOR: {
+      if (g->gui) { say(LV_ERR, "line %d: WaitFor reads terminal text and needs Window tui (use Sleep with gui)\n", c->line); return -1; }
       int to = 30000; if (c->n == 2) dur_ms(c->a[1], &to);
       int rl = g->realtime, found = 0, waited = 0; g->realtime = 1;
       while (waited <= to) { if (capture(g) == 0 && grid_has(g, c->a[0])) { found = 1; break; } tick(g, 100); waited += 100; }
       g->realtime = rl;
       if (!found) { say(LV_ERR, "line %d: WaitFor \"%s\": not on screen after %.1fs\n", c->line, c->a[0], to / 1000.0); return -1; }
       break; }
-    case C_RUN: if (start_session(g, c->a[0])) return -1; g->in_run = 1; g->dirty = 1; if (!g->title[0]) snprintf(g->title, sizeof g->title, "%.100s", c->a[0]); render_layer(g); g->dirty = 1; tick(g, 200); if (g->preview) dump_ascii(g, c); break;
+    case C_RUN: if (g->gui ? gui_start(g, c->a[0]) : start_session(g, c->a[0])) return -1; g->in_run = 1; g->dirty = 1; if (!g->title[0]) snprintf(g->title, sizeof g->title, "%.100s", c->a[0]); render_layer(g); g->dirty = 1; tick(g, 200); if (g->preview) dump_ascii(g, c); break;
     case C_SETUP: {
       char *argv[] = {"sh", "-c", c->a[0], NULL};
       if (run_argv(argv, NULL)) { say(LV_ERR, "line %d: setup command failed\n", c->line); return -1; }
@@ -958,17 +969,18 @@ static void apply_header(G *g, Script *sc) {
   for (int i = 0; i < sc->n; i++) {
     Cmd *c = &sc->v[i];
     switch (c->op) {
-    case C_SIZE: sscanf(c->a[0], "%dx%d", &g->cols, &g->rows); break;
+    case C_SIZE: sscanf(c->a[0], "%dx%d", &g->cols, &g->rows); g->size_set = 1; break;
     case C_THEME: for (int k = 0; k < NTHEMES; k++) if (!strcmp(c->a[0], THEMES[k].name)) g->theme = k; break;
     case C_FPS: g->fps = atoi(c->a[0]); break;
     case C_FONT: g->fontpx = atoi(c->a[0]); break;
     case C_LOOP: g->loop = 1; break;
     case C_TITLE: snprintf(g->title, sizeof g->title, "%s", c->a[0]); break;
-    case C_WINDOW: g->backend = !strcmp(c->a[0], "tui") ? 0 : 1; break;
+    case C_WINDOW: g->backend = !strcmp(c->a[0], "tui") ? 0 : 1; g->gui = g->backend; break;
     case C_ENV: if (g->nenv < 16) snprintf(g->env[g->nenv++], 256, "%s", c->a[0]); break;
     case C_CD: snprintf(g->cwd, sizeof g->cwd, "%s", c->a[0]); break;
     }
   }
+  if (g->gui && !g->size_set) { g->cols = CFG_GUI_W; g->rows = CFG_GUI_H; }
 }
 
 static long estimate_ms(Script *sc) {
@@ -1178,8 +1190,9 @@ int main(int argc, char **argv) {
   if (fonts_init(g->fontpx, &THEMES[g->theme])) { say(LV_ERR, "no usable monospace TTF found (set AUTODEMO_FONT=/path.ttf)\n"); return 1; }
   layout(g);
   g->preview = preview; g->sleep_scale = preview ? 0.3 : 1.0;
-  g->gr = (Grid){g->cols, g->rows, 0, 0, 0, calloc(g->cols * g->rows, sizeof(Cell))};
-  g->prev = g->gr; g->prev.c = calloc(g->cols * g->rows, sizeof(Cell));
+  int gc = g->gui ? 1 : g->cols, gr_ = g->gui ? 1 : g->rows; /* gui: pixels, no cell grid */
+  g->gr = (Grid){gc, gr_, 0, 0, 0, calloc(gc * gr_, sizeof(Cell))};
+  g->prev = g->gr; g->prev.c = calloc(gc * gr_, sizeof(Cell));
   g->layer = img_new(g->W, g->H); g->last = img_new(g->W, g->H); g->frame = img_new(g->W, g->H);
   render_layer(g); g->dirty = 1;
 
@@ -1224,7 +1237,8 @@ int main(int argc, char **argv) {
   }
 
   int rc = execute(g, &sc);
-  if (g->have_session) TMUX("kill-server");
+  if (g->gui) gui_close(g);
+  else if (g->have_session) TMUX("kill-server");
   if (rc) return 1;
   int bad = gate_verdict(g);
   if (bad && !g->force) {
