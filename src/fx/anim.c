@@ -14,14 +14,6 @@ static void transition(G *g, const Img *A, const Img *B, int which) {
   }
   free(M.p);
 }
-/* soft radial light: alpha falls off quadratically from the centre */
-static void img_glow(Img *im, int cx, int cy, int r, uint32_t c, int maxa) {
-  for (int y = cy - r < 0 ? 0 : cy - r; y < im->h && y <= cy + r; y++)
-    for (int x = cx - r < 0 ? 0 : cx - r; x < im->w && x <= cx + r; x++) {
-      double d = sqrt((double)((x - cx) * (x - cx) + (y - cy) * (y - cy))) / r; if (d >= 1) continue;
-      img_px(im, x, y, c, (int)(maxa * (1 - d) * (1 - d)));
-    }
-}
 /* slide background: theme colour, two soft glows (accent top-left, text colour bottom-right), faint dot grid, corner brackets */
 static void slide_bg(G *g, Img *S) {
   const Theme *t = &THEMES[g->theme]; uint32_t ac = t->accent ? t->accent : t->pal[CFG_SLIDE_ACCENT];
