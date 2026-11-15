@@ -7,5 +7,5 @@ autodemo: src/autodemo.c src/fx/transition.c src/fx/theme.c src/fx/anim.c src/fx
 test: autodemo
 	sh test/run
 clean:
-	mv -f autodemo /data/dev/trash/ 2>/dev/null || true
+	rm -f autodemo
 .PHONY: test clean

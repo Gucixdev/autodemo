@@ -3,7 +3,7 @@ Window gui
 Size 900x560
 Title "filem8"
 Env FM8_BACKEND=soft
-Run /data/dev/github/filem8/target/release/filem8
+Run ${FILEM8:-filem8}
 Sleep 2s
 Caption "filem8" bottom
 MouseMove 300 200 700ms

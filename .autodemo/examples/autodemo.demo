@@ -7,11 +7,11 @@ Cd /tmp
 Run bash -i
 Caption "Validate a script" bottom
 Sleep 500ms
-Send "/data/dev/github/autodemo/autodemo list 2>&1 | head; /data/dev/github/autodemo/autodemo check /data/dev/github/autodemo/.autodemo/examples/ls.demo" 25
+Send "$AUTODEMO_ROOT/autodemo list 2>&1 | head; $AUTODEMO_ROOT/autodemo check $AUTODEMO_ROOT/.autodemo/examples/ls.demo" 25
 SendKey Enter
 Sleep 2s
 Caption "Bulk-check everything" bottom
-Send "cd /data/dev/github/autodemo && ./autodemo bulk check 2>&1 | tail -8" 25
+Send "cd $AUTODEMO_ROOT && ./autodemo bulk check 2>&1 | tail -8" 25
 SendKey Enter
 Sleep 3s
 Loop

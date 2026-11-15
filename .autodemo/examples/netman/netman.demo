@@ -3,7 +3,7 @@ Size 100x28
 Theme dracula
 Title "netman"
 Setup printf "PS1='\\$ '\n" > $HOME/.bashrc
-Setup printf 'export PATH=%s:$PATH\n' '/data/dev/github/netman/bin' >> $HOME/.bashrc
+Setup [ -z "$NETMAN_BIN" ] || printf 'export PATH=%s:$PATH\n' "$NETMAN_BIN" >> $HOME/.bashrc
 Cd /tmp
 Run unshare -Urn bash -i
 Sleep 400ms

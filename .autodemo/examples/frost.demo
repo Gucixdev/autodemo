@@ -4,7 +4,7 @@ Theme dark
 Title "frost"
 Setup mkdir -p $HOME/w && printf 'fn main() {\n    println!("hello");\n}\n' > $HOME/w/hello.rs
 Cd /tmp
-Run /data/dev/github/frost/target/release/frost $HOME/w/hello.rs
+Run ${FROST:-frost} $HOME/w/hello.rs
 Sleep 1s
 Caption "frost - a small Rust editor" bottom
 SendKey Down Down

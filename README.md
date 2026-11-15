@@ -65,6 +65,12 @@ relative, local commands (no absolute paths, hosts, URLs, variables, `sudo`, `rm
 the help screen. **Nothing is sandboxed yet**: the demo runs with your real filesystem and only `$HOME` is private, so read the
 generated file before rendering anything you did not write yourself.
 
+## Bundled examples: which program they run
+
+The demos in `.autodemo/examples/` carry no machine paths. `$AUTODEMO_ROOT` is this repository; `frost` and `filem8` are taken from
+`PATH` unless `FROST` / `FILEM8` name the binary; the netman demo adds `$NETMAN_BIN` to `PATH` when it is set.
+`FROST=~/src/frost/target/release/frost autodemo preview .autodemo/examples/frost.demo` shows a screen from a build you made.
+
 ## GUI backend
 
 `Window gui` + `Size 900x560` (pixels) + `Run PROGRAM`: autodemo listens on its own Wayland socket (private HOME, never your
