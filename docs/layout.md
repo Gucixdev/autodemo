@@ -14,3 +14,5 @@ Everything is one translation unit via `#include`, so the Makefile lists the fil
 
 `proofs/shm_pool.lean`: Lean 4 model of the wl_shm pool lifetime in `src/gui.c` (buffers cut from a pool, `destroy` before the buffers are gone).
 Proves a live buffer always finds its pool mapped, and that the old unmap-at-once rule breaks it. Check with `lean4/check` from the `bash` repo.
+
+Sanitizer run: `cc -g -O1 -fsanitize=address,undefined -o /tmp/ad-asan src/autodemo.c $(pkg-config --cflags --libs freetype2 libwebp libwebpmux) -lm`, then `AUTODEMO_BIN=/tmp/ad-asan sh test/run` (clean on 2026-11-16, including Tk under Xwayland and Qt).

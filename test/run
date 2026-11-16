@@ -2,7 +2,7 @@
 # tests: script validation, render to webp (container check), ascii preview. 0 arguments.
 set -eu
 cd "$(dirname "$0")/.."
-A=./autodemo; T=$(mktemp -d /tmp/autodemo-test-XXXXXX); fail() { echo "FAIL: $*"; exit 1; }
+A=${AUTODEMO_BIN:-./autodemo}; T=$(mktemp -d /tmp/autodemo-test-XXXXXX); fail() { echo "FAIL: $*"; exit 1; }
 $A check .autodemo/examples/ls.demo >/dev/null || fail "check good"
 if $A check test/bad.demo 2>$T/err; then fail "bad demo accepted"; fi
 for s in "input before" "unknown command" "bad duration" "bad key" "size WxH"; do grep -q "$s" $T/err || fail "missing diagnostic: $s"; done
