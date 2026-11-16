@@ -28,6 +28,8 @@ printf 'Window gui\nRun true\nWaitFor settle soon\n' > $T/w2.demo; if $A check $
 printf 'Run true\nWaitFor title "x" 1s\n' > $T/w3.demo; if $A render $T/w3.demo -o $T/w3.webp >/dev/null 2>$T/err; then fail "WaitFor title in a terminal demo accepted"; fi
 if python3 -I -c "import PySide6.QtWidgets" 2>/dev/null; then   # Qt test client: clicks, menu/combo popups, dismissal, keyboard, modal dialog
   $A render test/gui-qt.demo -o $T/qt.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Qt: clicks, popups, dialog)"; }
+  $A render test/gui-qt-pl.demo -o $T/qtpl.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Layout pl: Polish letters)"; }
+  printf 'Layout de\nRun true\n' > $T/l.demo; if $A check $T/l.demo 2>/dev/null; then fail "Layout de accepted"; fi
   printf 'Window gui\nSize 700x500\nRun python3 -I test/qtapp.py\nWaitFor title "qt:ready" 20s\nWaitFor title "never-appears" 1s\n' > $T/q.demo
   if $A render $T/q.demo -o $T/q.webp >$T/q.out 2>&1; then fail "WaitFor title timeout did not fail the render"; fi
   grep -q "no window title contains" $T/q.out || fail "WaitFor title timeout message"

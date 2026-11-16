@@ -11,7 +11,7 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
     }
 
 **Header** (whole demo, position does not matter): `Size 100x30` (cells), `Theme dark|light|dracula|matrix`,
-`Font 15`, `Fps 10`, `Title "text"`, `Window tui|gui`, `Env KEY=VALUE`, `Cd DIR`,
+`Font 15`, `Fps 10`, `Layout us|pl` (gui keyboard), `Title "text"`, `Window tui|gui`, `Env KEY=VALUE`, `Cd DIR`,
 `Setup SHELL-CMD` (prepare fixtures in the private HOME), `Loop` (loop forever; default plays once),
 `Speed N`, `Typing instant|human`, `AutoCut on|off|MS`, `Transition [in|out|both] EFFECT [ms]`.
 

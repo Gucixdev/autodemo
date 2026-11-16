@@ -86,6 +86,7 @@ static void apply_header(G *g, Script *sc) {
     case C_FPS: g->fps = atoi(c->a[0]); break;
     case C_FONT: g->fontpx = atoi(c->a[0]); break;
     case C_LOOP: g->loop = 1; break;
+    case C_LAYOUT: snprintf(g->layout, sizeof g->layout, "%s", c->a[0]); break;
     case C_TITLE: snprintf(g->title, sizeof g->title, "%s", c->a[0]); break;
     case C_WINDOW: g->backend = !strcmp(c->a[0], "tui") ? 0 : 1; g->gui = g->backend; g->x11 = !strcmp(c->a[0], "x11"); break;
     case C_ENV: if (g->nenv < 16) snprintf(g->env[g->nenv++], 256, "%s", c->a[0]); break;

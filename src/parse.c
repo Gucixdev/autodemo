@@ -3,7 +3,7 @@
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
        C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_FEATEND, C_PSCROLL, C_MSCROLL, C_NOP };
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_FEATEND, C_PSCROLL, C_MSCROLL, C_LAYOUT, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
@@ -12,7 +12,7 @@ static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,3},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
-  {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
+  {"cd",C_CD,1,1},{"layout",C_LAYOUT,1,1},{"setup",C_SETUP,1,1},{0}};
 
 static int dur_ms(const char *s, int *out) {
   char *e; double v = strtod(s, &e);
@@ -188,6 +188,7 @@ static int parse_script(const char *path, Script *sc) {
       else if (c.n == 3) { say(LV_ERR, "%s:%d: WaitFor \"text\" [timeout] (Window gui: WaitFor title \"text\" [timeout] | WaitFor settle MS [timeout])\n", path, line); ok = 0; }
       else if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
       break;
+    case C_LAYOUT: if (strcmp(c.a[0], "us") && strcmp(c.a[0], "pl")) { say(LV_ERR, "%s:%d: Layout us|pl\n", path, line); ok = 0; } break;
     case C_AUTOCUT: if (strcmp(c.a[0], "off") && strcmp(c.a[0], "on") && atoi(c.a[0]) <= 0) { say(LV_ERR, "%s:%d: AutoCut on|off|MS\n", path, line); ok = 0; } break;
     case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { say(LV_ERR, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
     case C_TRANS: {

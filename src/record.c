@@ -3,7 +3,7 @@
 /* ---------------------------------------------------------- recorder ---- */
 typedef struct {
   /* config */
-  int cols, rows, fps, fontpx, loop, theme, backend, gui, x11, size_set, page_new; char title[128]; Img page;
+  int cols, rows, fps, fontpx, loop, theme, backend, gui, x11, size_set, page_new; char title[128], layout[16]; Img page;
   char env[16][256]; int nenv; char cwd[512];
   /* canvas */
   int W, H, M, TB, PAD, tx0, ty0;

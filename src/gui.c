@@ -67,7 +67,10 @@ static long wl_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t)
 /* ---- globals ---- */
 static const struct { const char *name; int ver; int type; } GL[] = {{"wl_compositor", 4, T_COMPOSITOR}, {"wl_shm", 1, T_SHM}, {"xdg_wm_base", 2, T_WMBASE}, {"wl_seat", 5, T_SEAT},
   {"wl_output", 2, T_OUTPUT}, {"wl_subcompositor", 1, T_SUBCOMP}, {"wl_data_device_manager", 3, T_NOP}};
-static const char KEYMAP[] = "xkb_keymap { xkb_keycodes { include \"evdev+aliases(qwerty)\" }; xkb_types { include \"complete\" }; xkb_compat { include \"complete\" }; xkb_symbols { include \"pc+us+inet(evdev)\" }; xkb_geometry { include \"pc(pc105)\" }; };\n";
+static char KEYMAP[512]; static size_t KEYMAPN;   /* xkb text; clients compile it with their own xkeyboard-config, so a layout is just a name */
+static void keymap_set(const char *layout) {
+  KEYMAPN = (size_t)snprintf(KEYMAP, sizeof KEYMAP, "xkb_keymap { xkb_keycodes { include \"evdev+aliases(qwerty)\" }; xkb_types { include \"complete\" }; xkb_compat { include \"complete\" }; xkb_symbols { include \"pc+%s+inet(evdev)\" }; xkb_geometry { include \"pc(pc105)\" }; };\n", layout && *layout ? layout : "us") + 1;
+}
 
 /* ---- window model: positions, stacking, hit test ---- */
 static int rgn_has(const Rgn *r, int x, int y) { int in = 0; for (int i = 0; i < r->n; i++) if (x >= r->r[i].x && y >= r->r[i].y && x < r->r[i].x + r->r[i].w && y < r->r[i].y + r->r[i].h) in = r->r[i].add; return in; }
@@ -313,7 +316,7 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
   case T_SEAT:
     if (op == 0) { uint32_t n = rd(&p); if (n < MAXO) { c->o[n].type = T_POINTER; if (c->nptr < 8) c->ptro[c->nptr++] = n; } }
     else if (op == 1) { uint32_t n = rd(&p); if (n >= MAXO) break; c->o[n].type = T_KEYBOARD; if (c->nkb < 8) c->kbo[c->nkb++] = n;
-      int fd = memfd_create("keymap", 0); if (fd >= 0) { if (write(fd, KEYMAP, sizeof KEYMAP) > 0) snd_fd(c, n, 0, 1, fd, (uint32_t)sizeof KEYMAP); close(fd); }
+      int fd = memfd_create("keymap", 0); if (fd >= 0) { if (write(fd, KEYMAP, KEYMAPN) > 0) snd_fd(c, n, 0, 1, fd, (uint32_t)KEYMAPN); close(fd); }
       if (o->a >= 4) snd(c, n, 5, "ii", 25, 600);
       if (c->kfs) { snd(c, n, 1, "uoa", ++W.serial, c->kfs, NULL, 0u); snd(c, n, 4, "uuuuu", ++W.serial, (uint32_t)W.mods, 0u, 0u, 0u); } else kb_refocus(g, c); }
     break;
@@ -385,8 +388,18 @@ static void gui_tapkey(Cli *c, int code, int mods) { if (mods != W.mods) wl_mods
 static int gui_text(G *g, const char *s, int speed) {
   Cli *c = &W.c;
   for (const char *p = s; *p; p++) {
-    int sh = 0, k = ch_key(*p, &sh); if (k < 0) { say(LV_WARN, "gui Send: character '%c' not in the US layout table, skipped\n", *p); continue; }
-    gui_tapkey(c, k, sh ? 1 : 0); g->idle = 0; if (g->human) tick(g, jitter(speed)); else wl_pump(g);
+    int sh = 0, k, mods;
+    if ((unsigned char)*p >= 0x80) {   /* Layout pl: Polish letters are AltGr (level3, Mod5 = 0x80) + the base letter, Shift for capitals */
+      const unsigned char *q = (const unsigned char *)p; uint32_t cp = utf8_next(&q); p = (const char *)q - 1;
+      static const uint32_t L[] = {0x105, 0x107, 0x119, 0x142, 0x144, 0xf3, 0x15b, 0x17a, 0x17c}; static const char B[] = "acelnosxz";
+      int cap = 0, idx = -1; for (int i = 0; i < 9; i++) { if (cp == L[i]) idx = i; if (cp == (L[i] == 0xf3 ? 0xd3 : L[i] - 1)) { idx = i; cap = 1; } }
+      if (strcmp(g->layout, "pl") || idx < 0) { say(LV_WARN, "gui Send: U+%04X needs 'Layout pl' (and a Polish letter), skipped\n", cp); continue; }
+      k = ch_key(B[idx], &sh); mods = 0x80 | (cap ? 1 : 0);
+    } else {
+      k = ch_key(*p, &sh); mods = sh ? 1 : 0;
+      if (k < 0) { say(LV_WARN, "gui Send: character '%c' not in the US layout table, skipped\n", *p); continue; }
+    }
+    gui_tapkey(c, k, mods); g->idle = 0; if (g->human) tick(g, jitter(speed)); else wl_pump(g);
   }
   tick(g, 40); wait_ms(g, sp(g, CFG_SEND_PAUSE_MS)); return 0;
 }
@@ -493,7 +506,7 @@ static int gui_start(G *g, const char *cmd) {
   struct sockaddr_un a = {.sun_family = AF_UNIX}; snprintf(a.sun_path, sizeof a.sun_path, "%s/%s", W.dir, W.sock); unlink(a.sun_path);
   W.lfd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0); W.c.fd = -1;
   if (W.lfd < 0 || bind(W.lfd, (struct sockaddr *)&a, sizeof a) || listen(W.lfd, 4)) { say(LV_ERR, "cannot listen on %s: %s\n", a.sun_path, strerror(errno)); return -1; }
-  signal(SIGPIPE, SIG_IGN); W.t0 = wl_now(); g->realtime = 1; /* async GUI toolkits need real time between events, idle-skipping would burst them */
+  keymap_set(g->layout); signal(SIGPIPE, SIG_IGN); W.t0 = wl_now(); g->realtime = 1; /* async GUI toolkits need real time between events, idle-skipping would burst them */
   g->page = img_new(g->cols, g->rows); g->have_session = 1; g->in_run = 1;
   if (g->x11) {   /* X11 programs: a rootful Xwayland is just one more Wayland client (shm, one window) of our compositor */
     int pf[2]; if (pipe(pf)) return -1;

@@ -1,0 +1,12 @@
+# gui backend test: Layout pl (AltGr Polish letters through the xkb keymap sent to the client). Needs python3 + PySide6.
+Window gui
+Size 700x500
+Layout pl
+Title "Qt, Polish keyboard"
+Run python3 -I ${AUTODEMO_ROOT}/qtapp.py
+WaitFor title "qt:ready" 30s
+MouseMove 350 421 300
+MouseClick
+Send "zażółć gęślą jaźń ĄĆĘŁŃÓŚŹŻ"
+WaitFor title "qt:text=zażółć gęślą jaźń ĄĆĘŁŃÓŚŹŻ" 10s
+Sleep 500ms

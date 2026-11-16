@@ -18,7 +18,7 @@ What the compositor does:
   subsurface is input-transparent and GTK owns the pointer; sending the pointer to the subsurface made GDK drop every event.
 - **WaitFor** (below), `AUTODEMO_WL_TRACE=1` prints every request and event with the time in ms.
 
-Limits: wl_shm rendering only, one client connection, US key layout, only the left mouse button, no clipboard, scale 1, no
+Limits: wl_shm rendering only, one client connection, US key layout by default (`Layout pl` below), only the left mouse button, no clipboard, scale 1, no
 decoration protocol (toolkits draw their own title bars), `Window x11` shows wrong pixels (see roadmap).
 
 ### WaitFor in a gui demo
@@ -31,9 +31,15 @@ the program exiting during the wait. Titles are what the program sets with `xdg_
 suffix, so match a part of it). Use `settle` after an action whose result has no title, for example after a menu opens. The
 recording keeps running while you wait (AutoCut still shortens a long still picture).
 
+### Layout
+
+`Layout pl` (default `us`) sends the client an xkb keymap `pc+pl+inet(evdev)`; the client compiles it with its own xkeyboard-config, so
+autodemo needs no xkbcommon. `Send "zażółć"` then types the Polish letters as AltGr (+Shift for capitals) plus the base key; the
+other characters use the US key positions, which `pl` shares. Other layouts are rejected by `check`. Tested with `test/gui-qt-pl.demo`.
+
 ### Tests
 
-`make test` runs `test/gui-qt.demo` (PySide6 app `test/qtapp.py`: click, menu popup, combo popup, dismissal, typing, modal dialog; every
+`make test` runs `test/gui-qt.demo` and `test/gui-qt-pl.demo` (PySide6 app `test/qtapp.py`: click, menu popup, combo popup, dismissal, typing, modal dialog; every
 step is asserted with `WaitFor title`) and `test/gui-firefox.demo` (a private Firefox profile run by `test/ffbox`: click in web
 content and a `<select>` popup). `test/ffbox` starts the flatpak Firefox inside bubblewrap: read-only runtime, private HOME, the
 compositor socket, no network, nothing of your real profile (`~/.var`) is visible. Both are skipped with a note when PySide6 or
