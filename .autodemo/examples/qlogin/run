@@ -1,7 +1,7 @@
 #!/bin/sh
 # Starts qlogin the way tests/run_qlogin does, touching nothing real: private dbus + qlogind, a FAKE PAM stack
 # (user = you, password = "secret"), fake utmp/wtmp/lastlog. For the autodemo recording; no arguments.
-Q=${QLOGIN_DIR:-/data/dev/github/qlogin}; T=$HOME/q; ME=$(id -un)
+Q=${QLOGIN_DIR:?set QLOGIN_DIR to the qlogin checkout}; T=$HOME/q; ME=$(id -un)
 mkdir -p "$T/run" "$T/dev" "$T/pam" "$T/sess" "$T/var/run" "$T/var/log" "$T/home"
 : > "$T/var/run/utmp"; : > "$T/var/log/wtmp"; : > "$T/var/log/lastlog"
 printf '#!/bin/sh\np=$(tr -d "\\0\\n")\n[ "$PAM_USER" = "%s" ] && [ "$p" = "secret" ]\n' "$ME" > "$T/chk"; chmod +x "$T/chk"
