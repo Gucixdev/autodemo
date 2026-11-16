@@ -1,0 +1,21 @@
+# gui backend test (needs the Firefox flatpak + bwrap, see test/ffbox; skipped by test/run otherwise): mouse clicks in web
+# content (the old known gap: Gecko's content subsurface has an empty input region, the pointer must go to GDK's surface)
+# and a <select> dropdown (xdg_popup). Firefox runs in a private profile, without network, on the local test/ffpage.
+Window gui
+Size 1000x700
+Title "Firefox (private profile, local page)"
+Run env FFBOX_PAGE=${AUTODEMO_ROOT}/ffpage ${AUTODEMO_ROOT}/ffbox file:///page/page.html
+WaitFor title "ff-ready" 90s
+WaitFor settle 800ms 30s
+Caption "click in web content"
+MouseMove 300 190 400
+MouseClick
+WaitFor title "ff-clicked" 10s
+Caption "dropdown popup"
+MouseMove 300 340 400
+MouseClick
+WaitFor settle 800ms 10s
+MouseMove 161 497 300
+MouseClick
+WaitFor title "ff-select=two" 10s
+Sleep 500ms

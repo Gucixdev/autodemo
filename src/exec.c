@@ -22,7 +22,8 @@ static int execute(G *g, Script *sc) {
     case C_PSCROLL: g->ninputs++; if (page_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 1)) return -1; break;
     case C_MSCROLL: g->ninputs++; if (mouse_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 3)) return -1; break;
     case C_WAITFOR: {
-      if (g->gui) { say(LV_ERR, "line %d: WaitFor reads terminal text and needs Window tui (use Sleep with gui)\n", c->line); return -1; }
+      if (g->gui) { if (gui_waitfor(g, c->line, c->n, c->a)) return -1; break; }
+      if (c->n >= 2 && (!strcmp(c->a[0], "title") || !strcmp(c->a[0], "settle"))) { say(LV_ERR, "line %d: WaitFor %s needs Window gui (in a terminal demo WaitFor waits for text on the screen)\n", c->line, c->a[0]); return -1; }
       int to = 30000; if (c->n == 2) dur_ms(c->a[1], &to);
       int rl = g->realtime, found = 0, waited = 0; g->realtime = 1;
       while (waited <= to) { if (capture(g) == 0 && grid_has(g, c->a[0])) { found = 1; break; } tick(g, 100); waited += 100; }

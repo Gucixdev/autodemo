@@ -9,7 +9,7 @@ typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"send",C_TYPE,1,2},{"sendkey",C_KEY,1,5},{"sleep",C_WAIT,1,1},{"mousemove",C_CMOVE,2,3},{"mouseclick",C_CCLICK,0,0},{"mousehide",C_CHIDE,0,0},{"mouseshow",C_CSHOW,0,0},
-  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,2},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
+  {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,3},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
   {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
   {"cd",C_CD,1,1},{"setup",C_SETUP,1,1},{0}};
@@ -181,7 +181,12 @@ static int parse_script(const char *path, Script *sc) {
       break;
     case C_WAITFOR:
       if (!seen_run) { say(LV_ERR, "%s:%d: WaitFor before any 'run'\n", path, line); ok = 0; }
-      if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
+      if (c.n >= 2 && !strcmp(c.a[0], "title")) { if (c.n == 3 && dur_ms(c.a[2], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[2]); ok = 0; } }   /* Window gui: title "text" [timeout] */
+      else if (c.n >= 2 && !strcmp(c.a[0], "settle")) {                                                                                                  /* Window gui: settle MS [timeout] */
+        if (dur_ms(c.a[1], &ms) || ms < 1) { say(LV_ERR, "%s:%d: WaitFor settle needs a duration (e.g. 500ms)\n", path, line); ok = 0; }
+        else if (c.n == 3 && dur_ms(c.a[2], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[2]); ok = 0; } }
+      else if (c.n == 3) { say(LV_ERR, "%s:%d: WaitFor \"text\" [timeout] (Window gui: WaitFor title \"text\" [timeout] | WaitFor settle MS [timeout])\n", path, line); ok = 0; }
+      else if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
       break;
     case C_AUTOCUT: if (strcmp(c.a[0], "off") && strcmp(c.a[0], "on") && atoi(c.a[0]) <= 0) { say(LV_ERR, "%s:%d: AutoCut on|off|MS\n", path, line); ok = 0; } break;
     case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { say(LV_ERR, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;

@@ -5,7 +5,7 @@
 /* gui backend (built-in Wayland compositor): window size in pixels, waits in ms */
 #define CFG_GUI_W          900
 #define CFG_GUI_H          560
-#define CFG_GUI_WAIT_MS    15000   /* how long to wait for the program's first window */
+#define CFG_GUI_WAIT_MS    30000   /* how long to wait for the program's first window */
 #define CFG_GUI_SETTLE_MS  600     /* after the window appears, before recording */
 /* output */
 #define CFG_FORMAT         "webp"  /* default output format when none is given: webp | mp4 | webm */

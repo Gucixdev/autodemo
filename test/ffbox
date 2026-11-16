@@ -1,0 +1,34 @@
+#!/bin/sh
+# ffbox: run the flatpak Firefox inside bubblewrap for autodemo's gui tests. Nothing of the real system is visible:
+# only the Firefox files and its runtime (read-only), the private HOME, the compositor socket dir and, as /page,
+# $FFBOX_PAGE (read-only). No network (own netns), no ~/.var, no real profile. Usage (from a demo): Run test/ffbox file:///page/x.html
+# Exit 127 when Firefox flatpak or bwrap is missing.
+command -v bwrap >/dev/null && command -v flatpak >/dev/null || exit 127
+FF=$(flatpak info --show-location org.mozilla.firefox 2>/dev/null)/files; [ -d "$FF" ] || exit 127
+RT=$(flatpak info --show-location "org.freedesktop.Platform//$(flatpak info org.mozilla.firefox | sed -n 's/^ *Runtime: .*\/\([^/]*\)$/\1/p')" 2>/dev/null)/files; [ -d "$RT" ] || exit 127
+[ "$1" = --probe ] && exit 0
+case "$XDG_RUNTIME_DIR" in "$HOME"/*) ;; *) echo "ffbox: XDG_RUNTIME_DIR must be inside the private HOME (never your real session)" >&2; exit 2;; esac
+P=$HOME/ffprofile; mkdir -p "$P" "$HOME/fc"
+cat > "$HOME/fonts.conf" <<F
+<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>/hostfonts</dir><cachedir>$HOME/fc</cachedir></fontconfig>
+F
+cat > "$P/user.js" <<'F'
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("termsofuse.bypassNotification", true);
+user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+user_pref("datareporting.policy.firstRunURL", "");
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.startup.page", 0);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
+user_pref("browser.disableResetPrompt", true);
+user_pref("app.update.enabled", false);
+user_pref("extensions.autoDisableScopes", 15);
+F
+exec bwrap --unshare-all --die-with-parent --ro-bind "$RT" /usr --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/bin /bin --ro-bind "$RT/etc" /etc \
+  --ro-bind "$FF" /app --proc /proc --dev /dev --tmpfs /tmp --bind "$HOME" "$HOME" --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
+  --ro-bind "${FFBOX_PAGE:-/var/empty}" /page --ro-bind /usr/share/fonts /hostfonts --setenv FONTCONFIG_FILE "$HOME/fonts.conf" \
+  --setenv LD_LIBRARY_PATH /app/lib:/app/lib/firefox --chdir "$HOME" \
+  /app/lib/firefox/firefox-bin --no-remote --profile "$P" "$@"

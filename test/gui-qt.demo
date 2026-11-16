@@ -1,0 +1,50 @@
+# gui backend test (needs python3 + PySide6): clicks, menu popup, combo-box popup, dismissal, keyboard focus, modal dialog.
+# Every step is asserted with WaitFor title, a failed wait makes the render (and make test) fail.
+Window gui
+Size 700x500
+Title "Qt test app (PySide6, Wayland)"
+Run python3 -I ${AUTODEMO_ROOT}/qtapp.py
+WaitFor title "qt:ready" 30s
+MouseMove 350 144 300
+MouseClick
+WaitFor title "qt:clicked" 10s
+Caption "menu popup"
+MouseMove 26 41 300
+MouseClick
+WaitFor settle 300ms 10s
+MouseMove 66 67 300
+MouseClick
+WaitFor title "qt:menu=hello" 10s
+Caption "combo box popup"
+MouseMove 326 247 300
+MouseClick
+WaitFor settle 300ms 10s
+MouseMove 42 312 300
+MouseClick
+WaitFor title "qt:combo=beta" 10s
+Caption "dismiss: Escape, click outside"
+MouseMove 326 247 300
+MouseClick
+WaitFor settle 300ms 10s
+SendKey Escape
+WaitFor settle 300ms 10s
+MouseMove 26 41 300
+MouseClick
+WaitFor settle 300ms 10s
+MouseMove 600 421 300
+MouseClick
+WaitFor settle 300ms 10s
+Caption "keyboard focus is back on the window"
+MouseMove 350 421 300
+MouseClick
+Send "hi"
+WaitFor title "qt:text=hi" 10s
+Caption "modal dialog"
+MouseMove 346 334 300
+MouseClick
+WaitFor title "qt-dialog" 10s
+WaitFor settle 300ms 10s
+MouseMove 350 262 300
+MouseClick
+WaitFor title "qt:dialog-closed" 10s
+Sleep 500ms

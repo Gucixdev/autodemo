@@ -22,4 +22,19 @@ if command -v foot >/dev/null; then
   $A render $T/g.demo -o $T/g.webp >/dev/null 2>&1 || fail "gui render (foot)"
   [ -s $T/g.webp ] || fail "gui webp empty"
 fi
+# gui: WaitFor syntax (check only; no program needed)
+printf 'Window gui\nRun true\nWaitFor title "x" 2s\nWaitFor settle 500ms 5s\n' > $T/w1.demo; $A check $T/w1.demo >/dev/null || fail "check WaitFor title/settle"
+printf 'Window gui\nRun true\nWaitFor settle soon\n' > $T/w2.demo; if $A check $T/w2.demo 2>/dev/null; then fail "WaitFor settle without duration accepted"; fi
+printf 'Run true\nWaitFor title "x" 1s\n' > $T/w3.demo; if $A render $T/w3.demo -o $T/w3.webp >/dev/null 2>$T/err; then fail "WaitFor title in a terminal demo accepted"; fi
+if python3 -I -c "import PySide6.QtWidgets" 2>/dev/null; then   # Qt test client: clicks, menu/combo popups, dismissal, keyboard, modal dialog
+  $A render test/gui-qt.demo -o $T/qt.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Qt: clicks, popups, dialog)"; }
+  printf 'Window gui\nSize 700x500\nRun python3 -I test/qtapp.py\nWaitFor title "qt:ready" 20s\nWaitFor title "never-appears" 1s\n' > $T/q.demo
+  if $A render $T/q.demo -o $T/q.webp >$T/q.out 2>&1; then fail "WaitFor title timeout did not fail the render"; fi
+  grep -q "no window title contains" $T/q.out || fail "WaitFor title timeout message"
+  printf 'Window gui\nSize 700x500\nRun python3 -I test/qtapp.py\nWaitFor title "qt:ready" 20s\nWaitFor settle 400ms 10s\nCaption "settled"\nSleep 200ms\n' > $T/q2.demo
+  $A render $T/q2.demo -o $T/q2.webp >$T/q.out 2>&1 || { cat $T/q.out; fail "WaitFor settle"; }
+else echo "skip: PySide6 not installed (Qt gui tests)" >&2; fi
+if AUTODEMO_TEST_FIREFOX=${AUTODEMO_TEST_FIREFOX:-1}; [ "$AUTODEMO_TEST_FIREFOX" = 1 ] && sh test/ffbox --probe >/dev/null 2>&1; then   # Firefox flatpak in bwrap: web-content clicks + <select> popup
+  $A render test/gui-firefox.demo -o $T/ff.webp >$T/ff.out 2>&1 || { cat $T/ff.out; fail "gui render (Firefox: web content click, select popup)"; }
+else echo "skip: Firefox flatpak/bwrap not available (or AUTODEMO_TEST_FIREFOX=0)" >&2; fi
 echo "all tests passed"
