@@ -19,7 +19,7 @@ What the compositor does:
 - **WaitFor** (below), `AUTODEMO_WL_TRACE=1` prints every request and event with the time in ms.
 
 Limits: wl_shm rendering only, one client connection, US key layout by default (`Layout pl` below), only the left mouse button, no clipboard, scale 1, no
-decoration protocol (toolkits draw their own title bars), `Window x11` shows wrong pixels (see roadmap).
+decoration protocol (toolkits draw their own title bars), `Window x11` (a rootful Xwayland, no window manager): the X program draws inside one fixed-size root window, so `WaitFor title` does not see its title; use `WaitFor settle` or `Sleep`. Clicks and keys reach it (tested with Tk).
 
 ### WaitFor in a gui demo
 

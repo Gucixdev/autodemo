@@ -26,7 +26,7 @@ typedef struct {
   Rgn inp, pinp; int hasinp, phasinp;                                                       /* input region (applied on commit); none = whole surface */
   char title[128];
 } Surf;
-typedef struct { int used, fd; uint8_t *base; size_t size; } Pool;
+typedef struct { int used, fd; uint8_t *base; size_t size; int refs, dead; } Pool;   /* refs: buffers cut from it; dead: wl_shm_pool.destroy came, the mapping lives until the last buffer is gone */
 typedef struct { int used, pool, off, w, h, stride, fmt; uint32_t obj; } Buf;
 typedef struct { int fd, nfd, fds[16]; unsigned char in[1 << 16]; size_t nin; Obj o[MAXO]; Surf s[MAXS]; Pool pool[32]; Buf buf[128]; Rgn rg[32]; int rgused[32]; Posnr pos[32]; int posused[32];
   int nkb, nptr, seatv, entered, kfocus, nseq, acttop; uint32_t kbo[8], ptro[8], ptrsurf, kfs; double pgx, pgy; } Cli;
@@ -61,6 +61,7 @@ static void snd_fd(Cli *c, uint32_t id, int op, uint32_t fmt, int fd, uint32_t s
 }
 static uint32_t rd(const unsigned char **p) { uint32_t v; memcpy(&v, *p, 4); *p += 4; return v; }
 static const char *rds(const unsigned char **p) { uint32_t l = rd(p); const char *s = (const char *)*p; *p += (l + 3) & ~3u; return s; }
+static void pool_drop(Pool *p) { if (p->base) munmap(p->base, p->size); if (p->fd >= 0) close(p->fd); *p = (Pool){0}; }
 static void del_id(Cli *c, uint32_t id) { snd(c, 1, 1, "u", id); if (id < MAXO) c->o[id].type = T_NONE; }
 static long wl_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000L + t.tv_nsec / 1000000; }
 
@@ -271,11 +272,11 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
     Pool *pl = &c->pool[o->a];
     if (op == 0) { uint32_t n = rd(&p); int off = (int)rd(&p), w = (int)rd(&p), h = (int)rd(&p), st = (int)rd(&p), fmt = (int)rd(&p);
       if (wl_trace()) fprintf(stderr, "wl: buffer off=%d %dx%d stride=%d fmt=%d\n", off, w, h, st, fmt);
-      for (int i = 0; i < 128 && n < MAXO; i++) if (!c->buf[i].used) { c->buf[i] = (Buf){1, o->a, off, w, h, st, fmt, n}; c->o[n].type = T_BUFFER; c->o[n].a = i; break; } }
-    else if (op == 1) { if (pl->base) munmap(pl->base, pl->size); if (pl->fd >= 0) close(pl->fd); pl->used = 0; del_id(c, id); }
+      for (int i = 0; i < 128 && n < MAXO; i++) if (!c->buf[i].used) { c->buf[i] = (Buf){1, o->a, off, w, h, st, fmt, n}; pl->refs++; c->o[n].type = T_BUFFER; c->o[n].a = i; break; } }
+    else if (op == 1) { pl->dead = 1; if (pl->refs <= 0) pool_drop(pl); del_id(c, id); }   /* destroy is allowed while buffers still use the memory (Xwayland does it at once) */
     else if (op == 2) { size_t ns = (size_t)rd(&p); if (pl->base) munmap(pl->base, pl->size); void *m = mmap(NULL, ns, PROT_READ, MAP_SHARED, pl->fd, 0); pl->base = m == MAP_FAILED ? NULL : m; pl->size = ns; }
     break; }
-  case T_BUFFER: if (op == 0) { c->buf[o->a].used = 0; del_id(c, id); } break;
+  case T_BUFFER: if (op == 0) { Buf *bf = &c->buf[o->a]; Pool *pl = &c->pool[bf->pool]; bf->used = 0; if (pl->used && --pl->refs <= 0 && pl->dead) pool_drop(pl); del_id(c, id); } break;
   case T_WMBASE:
     if (op == 2) { uint32_t n = rd(&p), sf = rd(&p); if (n < MAXO && sf < MAXO && c->o[sf].type == T_SURFACE) { c->o[n].type = T_XSURF; c->o[n].a = c->o[sf].a; c->s[c->o[sf].a].xobj = n; } }
     else if (op == 1) { uint32_t n = rd(&p); if (n >= MAXO) break; c->o[n].type = T_NOP; for (int i = 0; i < 32; i++) if (!c->posused[i]) { c->posused[i] = 1; memset(&c->pos[i], 0, sizeof c->pos[i]); c->o[n].type = T_POSNR; c->o[n].a = i; break; } }
