@@ -23,6 +23,7 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
 | `Send "text" [ms]` | text appears at once, then a short pause (`CFG_SEND_PAUSE_MS`); `Typing human` types char by char (`ms` per char); `\n` is Enter |
 | `SendKey Enter Down*3 C-c` | tmux key names; `NAME*N` repeats |
 | `Sleep 500ms\|2s` | pause |
+| `Clipboard "text"` | `Window gui` only: the text becomes the selection, so Ctrl+V in the app pastes it (up to 60000 bytes) |
 | `MouseMove x y [ms]` / `MouseClick` / `MouseHide` / `MouseShow` | simulated pointer (cells, eased); click sends SGR mouse press/release to apps with mouse reporting |
 | `PageScroll up\|down [n]` / `MouseScroll up\|down [n]` | PageUp/PageDown, or mouse wheel at the pointer |
 | `Caption "text" [top\|bottom]` / `Caption off` | overlay until switched off |

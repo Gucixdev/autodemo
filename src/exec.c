@@ -21,6 +21,9 @@ static int execute(G *g, Script *sc) {
     case C_CUTEND: g->cut = 0; g->dirty = 1; break;
     case C_PSCROLL: g->ninputs++; if (page_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 1)) return -1; break;
     case C_MSCROLL: g->ninputs++; if (mouse_scroll(g, !strcmp(c->a[0], "up"), c->n > 1 ? atoi(c->a[1]) : 3)) return -1; break;
+    case C_CLIPBOARD:
+      if (!g->gui) { say(LV_ERR, "line %d: Clipboard needs Window gui\n", c->line); return -1; }
+      gui_clipboard(g, c->a[0]); break;
     case C_WAITFOR: {
       if (g->gui) { if (gui_waitfor(g, c->line, c->n, c->a)) return -1; break; }
       if (c->n >= 2 && (!strcmp(c->a[0], "title") || !strcmp(c->a[0], "settle"))) { say(LV_ERR, "line %d: WaitFor %s needs Window gui (in a terminal demo WaitFor waits for text on the screen)\n", c->line, c->a[0]); return -1; }

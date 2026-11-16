@@ -12,7 +12,7 @@
 #include <signal.h>
 
 enum { T_NONE, T_DISPLAY, T_REGISTRY, T_CALLBACK, T_COMPOSITOR, T_SURFACE, T_REGION, T_SHM, T_POOL, T_BUFFER, T_WMBASE, T_XSURF,
-       T_TOPLEVEL, T_SEAT, T_POINTER, T_KEYBOARD, T_OUTPUT, T_SUBCOMP, T_SUBSURF, T_NOP, T_POSNR, T_POPUP };
+       T_TOPLEVEL, T_SEAT, T_POINTER, T_KEYBOARD, T_OUTPUT, T_SUBCOMP, T_SUBSURF, T_NOP, T_POSNR, T_POPUP, T_DDMGR, T_DDEV, T_DSRC };
 #define MAXO 1024
 #define MAXS 128
 #define NKIDS 32
@@ -63,11 +63,27 @@ static uint32_t rd(const unsigned char **p) { uint32_t v; memcpy(&v, *p, 4); *p 
 static const char *rds(const unsigned char **p) { uint32_t l = rd(p); const char *s = (const char *)*p; *p += (l + 3) & ~3u; return s; }
 static void pool_drop(Pool *p) { if (p->base) munmap(p->base, p->size); if (p->fd >= 0) close(p->fd); *p = (Pool){0}; }
 static void del_id(Cli *c, uint32_t id) { snd(c, 1, 1, "u", id); if (id < MAXO) c->o[id].type = T_NONE; }
+/* ---- clipboard: the script's `Clipboard "text"` is offered as the selection; paste = the client calls wl_data_offer.receive and gets the text through its pipe.
+   Copies made inside the app are not routed (one client, the script owns the clipboard). Server-made object ids live in 0xff000000.. (offers). */
+#define CLIP_MAX 60000
+#define OFFER_BASE 0xff000000u
+static char CLIP[CLIP_MAX + 1]; static int CLIPN = -1; static uint32_t DDEV, DOFFER = OFFER_BASE;
+static void clip_offer(Cli *c) {
+  if (!DDEV || c->fd < 0) return;
+  if (CLIPN < 0) return;
+  uint32_t id = DOFFER++; snd(c, DDEV, 0, "u", id);
+  snd(c, id, 0, "s", "text/plain;charset=utf-8"); snd(c, id, 0, "s", "text/plain"); snd(c, id, 0, "s", "UTF8_STRING"); snd(c, DDEV, 5, "u", id);
+}
+static void clip_send(int fd) {   /* write the text into the client's pipe without ever blocking the compositor */
+  int fl = fcntl(fd, F_GETFL); if (fl >= 0) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+  for (int off = 0; off < CLIPN;) { ssize_t r = write(fd, CLIP + off, (size_t)(CLIPN - off)); if (r > 0) off += (int)r; else if (r < 0 && errno == EINTR) continue; else break; }
+  close(fd);
+}
 static long wl_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000L + t.tv_nsec / 1000000; }
 
 /* ---- globals ---- */
 static const struct { const char *name; int ver; int type; } GL[] = {{"wl_compositor", 4, T_COMPOSITOR}, {"wl_shm", 1, T_SHM}, {"xdg_wm_base", 2, T_WMBASE}, {"wl_seat", 5, T_SEAT},
-  {"wl_output", 2, T_OUTPUT}, {"wl_subcompositor", 1, T_SUBCOMP}, {"wl_data_device_manager", 3, T_NOP}};
+  {"wl_output", 2, T_OUTPUT}, {"wl_subcompositor", 1, T_SUBCOMP}, {"wl_data_device_manager", 3, T_DDMGR}};
 static char KEYMAP[512]; static size_t KEYMAPN;   /* xkb text; clients compile it with their own xkeyboard-config, so a layout is just a name */
 static void keymap_set(const char *layout) {
   KEYMAPN = (size_t)snprintf(KEYMAP, sizeof KEYMAP, "xkb_keymap { xkb_keycodes { include \"evdev+aliases(qwerty)\" }; xkb_types { include \"complete\" }; xkb_compat { include \"complete\" }; xkb_symbols { include \"pc+%s+inet(evdev)\" }; xkb_geometry { include \"pc(pc105)\" }; };\n", layout && *layout ? layout : "us") + 1;
@@ -150,7 +166,7 @@ static void kb_refocus(G *g, Cli *c) {
   if (!c->nkb || want == c->kfs) return;
   if (c->kfs) KSND(c, 2, "uo", ++W.serial, c->kfs);
   c->kfs = want; c->kfocus = want != 0;
-  if (want) { KSND(c, 1, "uoa", ++W.serial, want, NULL, 0u); KSND(c, 4, "uuuuu", ++W.serial, (uint32_t)W.mods, 0u, 0u, 0u); }
+  if (want) { KSND(c, 1, "uoa", ++W.serial, want, NULL, 0u); KSND(c, 4, "uuuuu", ++W.serial, (uint32_t)W.mods, 0u, 0u, 0u); clip_offer(c); }
 }
 static void ptr_refresh(G *g, Cli *c);
 
@@ -227,6 +243,9 @@ static void surf_free(G *g, Cli *c, int si) {
 }
 static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, int len) {
   if (wl_trace()) fprintf(stderr, "wl< %ld obj %u type %d op %d len %d\n", wl_now() - W.t0, id, id < MAXO ? c->o[id].type : -1, op, len);
+  if (id >= OFFER_BASE) {                                                                              /* wl_data_offer made by clip_offer: receive(mime, fd) / destroy */
+    if (op == 1 && c->nfd) { int fd = c->fds[0]; memmove(c->fds, c->fds + 1, sizeof(int) * (--c->nfd)); if (CLIPN >= 0) clip_send(fd); else close(fd); }
+    return; }
   if (id >= MAXO) return;
   Obj *o = &c->o[id];
   switch (o->type) {
@@ -339,6 +358,12 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
       for (int i = 0; i < *n; i++) if (l[i] == id) { memmove(l + i, l + i + 1, sizeof *l * (size_t)(*n - i - 1)); (*n)--; break; }
       del_id(c, id); }
     break;
+  case T_DDMGR:
+    if (op == 0) { uint32_t n = rd(&p); if (n < MAXO) c->o[n].type = T_DSRC; }                       /* create_data_source */
+    else if (op == 1) { uint32_t n = rd(&p); if (n < MAXO) { c->o[n].type = T_DDEV; DDEV = n; } }   /* get_data_device; no selection event yet: Qt crashes on one that arrives during its start-up roundtrip, real compositors send it on keyboard focus */
+    break;
+  case T_DDEV: if (op == 2) { if (DDEV == id) DDEV = 0; del_id(c, id); } break;                           /* release; set_selection / start_drag ignored */
+  case T_DSRC: if (op == 1) del_id(c, id); break;                                                         /* destroy */
   default: if (op == 0 && (o->type == T_NOP)) { if (len == 0) del_id(c, id); } break;
   }
   (void)len;
@@ -497,6 +522,10 @@ static void gui_blit(G *g) {
     if (fb < CFG_CORNER_R) { double dy = CFG_CORNER_R - fb - 0.5; skip = CFG_CORNER_R - (int)sqrt((double)CFG_CORNER_R * CFG_CORNER_R - dy * dy); }
     if (P->w - skip > skip) memcpy(L->p + ((size_t)(g->ty0 + y) * L->w + g->tx0 + skip) * 4, P->p + ((size_t)y * P->w + skip) * 4, (size_t)(P->w - 2 * skip) * 4);
   }
+}
+static void gui_clipboard(G *g, const char *text) {   /* Clipboard "text": becomes the selection of the client's data device */
+  size_t n = strlen(text); if (n > CLIP_MAX) { say(LV_WARN, "gui Clipboard: text cut to %d bytes\n", CLIP_MAX); n = CLIP_MAX; }
+  memcpy(CLIP, text, n); CLIP[n] = 0; CLIPN = (int)n; clip_offer(&W.c); wl_pump(g);
 }
 static void gui_close(G *g) { (void)g;
   if (W.xpid > 0) { kill(-W.xpid, SIGTERM); usleep(100000); kill(-W.xpid, SIGKILL); waitpid(W.xpid, NULL, 0); W.xpid = 0; }

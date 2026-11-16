@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <stdarg.h>
@@ -50,6 +51,10 @@ static void say(int lv, const char *fmt, ...) {
 #include "session.c"
 #include "exec.c"
 #include "cli.c"
+
+/* The private HOME (tmux conf, toolkit caches, a Firefox profile can reach 100 MB) is removed when autodemo exits; it used to leak into /tmp (tmpfs) on every run. */
+static int home_rm(const char *path, const struct stat *sb, int type, struct FTW *ft) { (void)sb; (void)type; (void)ft; remove(path); return 0; }
+static void home_cleanup(void) { if (!strncmp(tm_home, "/tmp/autodemo-home-", 19) && !strstr(tm_home, "..")) nftw(tm_home, home_rm, 16, FTW_DEPTH | FTW_PHYS); }
 
 int main(int argc, char **argv) {
   if (argc >= 5 && !strcmp(argv[1], "sandbox")) { /* sandbox WORKDIR net|nonet CMD : run CMD with a private view of the system */
@@ -147,6 +152,7 @@ int main(int argc, char **argv) {
   snprintf(tm_sock, sizeof tm_sock, "autodemo-%d", getpid());
   snprintf(tm_home, sizeof tm_home, "/tmp/autodemo-home-XXXXXX");
   if (!mkdtemp(tm_home)) { perror("mkdtemp"); return 1; }
+  atexit(home_cleanup);
   snprintf(tm_conf, sizeof tm_conf, "%s/tmux.conf", tm_home);
   FILE *cf = fopen(tm_conf, "w");
   fprintf(cf, "set -g status off\nset -g remain-on-exit on\nset -g escape-time 0\nset -g default-terminal xterm-256color\nset -g history-limit 2000\n");

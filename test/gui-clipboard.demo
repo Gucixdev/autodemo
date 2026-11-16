@@ -1,0 +1,15 @@
+# Clipboard test (needs python3 + PySide6): the script's text is offered through wl_data_device, Ctrl+V pastes it into the line edit.
+Window gui
+Size 700x500
+Run python3 -I ${AUTODEMO_ROOT}/qtapp.py
+WaitFor title "qt:ready" 30s
+WaitFor settle 300ms 10s
+MouseMove 350 421 300
+MouseClick
+Clipboard "from the script"
+SendKey C-v
+WaitFor title "qt:text=from the script" 10s
+Clipboard "second text"
+SendKey C-a C-v
+WaitFor title "qt:text=second text" 10s
+Sleep 300ms

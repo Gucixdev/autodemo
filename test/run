@@ -25,6 +25,7 @@ fi
 # gui: WaitFor syntax (check only; no program needed)
 printf 'Window gui\nRun true\nWaitFor title "x" 2s\nWaitFor settle 500ms 5s\n' > $T/w1.demo; $A check $T/w1.demo >/dev/null || fail "check WaitFor title/settle"
 printf 'Window gui\nRun true\nWaitFor settle soon\n' > $T/w2.demo; if $A check $T/w2.demo 2>/dev/null; then fail "WaitFor settle without duration accepted"; fi
+printf 'Run true\nClipboard "x"\n' > $T/w4.demo; if $A render $T/w4.demo -o $T/w4.webp >/dev/null 2>$T/err; then fail "Clipboard in a terminal demo accepted"; fi
 printf 'Run true\nWaitFor title "x" 1s\n' > $T/w3.demo; if $A render $T/w3.demo -o $T/w3.webp >/dev/null 2>$T/err; then fail "WaitFor title in a terminal demo accepted"; fi
 if python3 -I -c "import tkinter" 2>/dev/null && command -v Xwayland >/dev/null; then   # X11 client over rootful Xwayland: the picture must not be stripes, a click must arrive
   mark=$T/tkmark; printf 'Window x11\nSize 500x300\nRun env TK_MARK=%s python3 -I test/tkapp.py\nSleep 5s\nMouseMove 199 197 300\nMouseClick\nSleep 1500ms\n' "$mark" > $T/x.demo
@@ -42,6 +43,7 @@ P
 fi
 if python3 -I -c "import PySide6.QtWidgets" 2>/dev/null; then   # Qt test client: clicks, menu/combo popups, dismissal, keyboard, modal dialog
   $A render test/gui-qt.demo -o $T/qt.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Qt: clicks, popups, dialog)"; }
+  $A render test/gui-clipboard.demo -o $T/clip.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Clipboard: wl_data_device paste into Qt)"; }
   $A render test/gui-qt-pl.demo -o $T/qtpl.webp >$T/qt.out 2>&1 || { cat $T/qt.out; fail "gui render (Layout pl: Polish letters)"; }
   printf 'Layout de\nRun true\n' > $T/l.demo; if $A check $T/l.demo 2>/dev/null; then fail "Layout de accepted"; fi
   printf 'Window gui\nSize 700x500\nRun python3 -I test/qtapp.py\nWaitFor title "qt:ready" 20s\nWaitFor title "never-appears" 1s\n' > $T/q.demo
