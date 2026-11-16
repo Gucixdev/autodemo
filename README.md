@@ -85,7 +85,7 @@ Backends: the terminal (private tmux) and the gui backend (built-in Wayland comp
 
 ## Reference
 
-[Script syntax](docs/syntax.md), [GUI backend and config.h](docs/gui.md), [sizes](docs/sizes.md), [source layout](docs/layout.md), [roadmap](docs/roadmap.md).
+[Script syntax](docs/syntax.md), [GUI backend and config.h](docs/gui.md), [sizes](docs/sizes.md), [source layout](docs/layout.md), [benchmark](docs/bench.md), [roadmap](docs/roadmap.md).
 
 ## Runtime requirements
 - Build: a C compiler, freetype2, libwebp (+ libwebpmux). No Wayland/X libraries: the gui backend speaks the protocol itself.

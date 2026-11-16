@@ -1,0 +1,25 @@
+#!/bin/sh
+# bench: how long autodemo takes on a fixed set of demos (wall time, median of 3). No arguments.
+# Terminal demos need tmux, the GUI demo needs python3 + tkinter + Xwayland; missing pieces are skipped, not failed.
+cd "$(dirname "$0")" || exit 1
+[ -x ./autodemo ] || make -s || exit 1
+T=$(mktemp -d) || exit 1; trap 'mv "$T" "${TMPDIR:-/tmp}/autodemo-bench.$$" 2>/dev/null' EXIT
+ms() { s=$(date +%s%N); "$@" >/dev/null 2>&1 || { echo "bench: failed: $*" >&2; exit 1; }; e=$(date +%s%N); echo $(( (e - s) / 1000000 )); }
+med() { printf '%s\n' "$@" | sort -n | sed -n 2p; }
+run3() { a=$(ms "$@"); b=$(ms "$@"); c=$(ms "$@"); med "$a" "$b" "$c"; }
+
+printf 'Size 60x12\nRun sh\nSend "seq 1 200 | tr \\"\\\\n\\" \\" \\"\\n"\nSleep 500ms\n' > "$T/small.demo"
+printf 'Run sh\nSend "seq 1 3000\\n"\nSleep 1s\nSend "ls -l /usr/bin | head -50\\n"\nSleep 1s\n' > "$T/scroll.demo"
+printf 'Size 60x12\nRun sh\nSend "seq 1 200 | tr \\"\\\\n\\" \\" \\"\\n"\nSleep 2s\n' > "$T/short.demo"
+for d in small scroll short; do ./autodemo check "$T/$d.demo" >/dev/null 2>&1 || { echo "bench demo $d does not parse"; exit 1; }; done
+
+echo "check  (parse only)            $(run3 ./autodemo check "$T/scroll.demo") ms"
+if command -v tmux >/dev/null; then
+  echo "render small (0.5 s of demo)   $(run3 ./autodemo render "$T/small.demo" -o "$T/o.webp") ms"
+  echo "render scrolling output        $(run3 ./autodemo render "$T/scroll.demo" -o "$T/o.webp") ms"
+  echo "render 2 s still + autocut     $(run3 ./autodemo render "$T/short.demo" -o "$T/o.webp") ms"
+else echo "terminal demos: skipped (no tmux)"; fi
+if python3 -I -c "import tkinter" 2>/dev/null && command -v Xwayland >/dev/null; then
+  printf 'Window x11\nSize 500x300\nRun python3 -I test/tkapp.py\nSleep 3s\n' > "$T/x.demo"
+  echo "render Tk app (Window x11, 3 s) $(run3 ./autodemo render "$T/x.demo" -o "$T/o.webp") ms"
+else echo "Window x11: skipped (no tkinter or Xwayland)"; fi
