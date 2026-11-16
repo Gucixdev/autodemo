@@ -29,5 +29,6 @@ Command names are case-insensitive (`Send`, `send`). One statement per line; opt
 | `Slide "title" ["subtitle" [2s]]` | title card with animated build-up |
 | `Transition ...` | effects: none fade fade-in fade-out zoom zoom-in zoom-out slide slide-in slide-out slide-left slide-right slide-up slide-down wipe (in = entering a slide, out = leaving) |
 | `Cut` / `CutEnd`, `WaitFor "text" [timeout]` | drop loading screens from the video; wait until text is on screen (default 30 s) |
+| `WaitFor title "text" [timeout]` / `WaitFor settle 500ms [timeout]` | `Window gui` only: until a window title contains the text / until the window picture stops changing for that long. Timeout is an error like the terminal form. See [gui.md](gui.md) |
 | `Feature "name"` | section; lines before the first Feature always run; `--feature NAME` renders one, `--split` one file each |
 | `AutoCut on\|off\|MS` | a picture unchanged for longer than MS (default `CFG_AUTOCUT_MS`) stops costing video time |

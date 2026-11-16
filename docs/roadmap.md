@@ -18,7 +18,6 @@ Layout today: `.autodemo/examples/` holds everything (hand-written `NAME.demo`, 
 
 ## Known gaps
 - `Window x11` (rootful Xwayland inside the built-in compositor): Xwayland starts, the picture is wrong (stripes, no window content). Ideas: pixel/channel interpretation, window never mapped without a WM, damage not reported.
-- gui backend: mouse clicks do not reach Firefox web content (keyboard works).
 - frost demo is sparse; 2x scale for the matrix theme; MouseScroll untested with a mouse-reporting app; `.demomobile` (low priority).
 - `gen -c`: the "N commands" label is fine, but captions are plain "Step N".
 

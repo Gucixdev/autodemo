@@ -15,7 +15,7 @@ and renders an **animated WebP** (or mp4/webm). Written in C, links freetype + l
 | Animated WebP (libwebp anim encoder, frame dedup, lossless or lossy) | done |
 | mp4 / webm via ffmpeg | done (needs ffmpeg) |
 | `preview` (ASCII key screens) | done |
-| GUI backend (`Window gui`): tiny headless Wayland compositor built into the binary, no external tools | works with foot, filem8 (`FM8_BACKEND=soft`); Firefox renders and takes keys, mouse clicks in its web content are NOT yet received |
+| GUI backend (`Window gui`): tiny headless Wayland compositor built into the binary, no external tools | works with foot, filem8, Qt (PySide6) and Firefox (clicks in web content, `<select>` popup); popups, dialogs, `WaitFor title\|settle`: see docs/gui.md |
 | Emacs mode | not started; the format is plain line-based on purpose |
 
 Limits: wide (CJK) glyphs take one cell, no italics, no blinking cursor, no bold face for
