@@ -11,3 +11,6 @@
 - `src/gui.c` - built-in Wayland compositor. `src/sandbox.c`, `src/gen.c`. Defaults: `src/config.h`.
 
 Everything is one translation unit via `#include`, so the Makefile lists the files as dependencies of `src/autodemo.c`.
+
+`proofs/shm_pool.lean`: Lean 4 model of the wl_shm pool lifetime in `src/gui.c` (buffers cut from a pool, `destroy` before the buffers are gone).
+Proves a live buffer always finds its pool mapped, and that the old unmap-at-once rule breaks it. Check with `lean4/check` from the `bash` repo.
