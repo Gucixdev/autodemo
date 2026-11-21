@@ -31,6 +31,11 @@ retry system branching variables steo validation undo redo global actions versio
 self healing selectors instant replay reusable components 
 mp3 mp4 webp giff tiff avif
 png jpg
+podobnie jak gael bedzie składnia lisplike ale wszystko jest makrem a nie listą
+
+
+
+
 
 gui/tui czy co tam do tych visual scripting w rust chyba 
 
