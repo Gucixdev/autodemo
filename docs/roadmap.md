@@ -12,7 +12,11 @@ Layout today: `.autodemo/examples/` holds everything (hand-written `NAME.demo`, 
 wiecej formatów wraz ze screenshotami 
 podział na zone ze np 1 wideo per zone w jednym pliku pokazujac jeden feature?
 nawet pełnometrażowe tutoriale w planach i guides cnie autoguide moze?
-
+narrator napewno uzywajac whispercpp czy czegos podobnego i mp4 wsparcie
+index.html z calym guide 
+inspiracje 
+AutoDemo Demos-as-Code 
+autodemo joshshiman
 
 
 
