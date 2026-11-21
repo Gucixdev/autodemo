@@ -9,6 +9,14 @@ Layout today: `.autodemo/examples/` holds everything (hand-written `NAME.demo`, 
 - Stale generated demos in `.autodemo/examples/REPO/` made with the old `--help` mode (and their webp) should be deleted once their tool has a real `-c` demo.
 - Decide whether generated `examples/REPO/*` is committed or git-ignored.
 
+wiecej formatów wraz ze screenshotami 
+podział na zone ze np 1 wideo per zone w jednym pliku pokazujac jeden feature?
+nawet pełnometrażowe tutoriale w planach i guides cnie autoguide moze?
+
+
+
+
+
 ## Tooling
 - `autodemo auto URL`: clone a GitHub link, build (sandbox with network, filesystem confined), run without network, write a short README loop, a long mp4 with slower typing and an `.srt`, and a `tutorial.md` for complex programs. No automatic YouTube upload (outward-facing: the user pastes the link). Check the current GitHub README media limits.
 - Sandbox the render itself for programs that come from a URL (today only `gen`'s probe and `autodemo sandbox` are sandboxed).
