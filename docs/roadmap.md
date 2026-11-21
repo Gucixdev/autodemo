@@ -9,12 +9,36 @@ Layout today: `.autodemo/examples/` holds everything (hand-written `NAME.demo`, 
 - Stale generated demos in `.autodemo/examples/REPO/` made with the old `--help` mode (and their webp) should be deleted once their tool has a real `-c` demo.
 - Decide whether generated `examples/REPO/*` is committed or git-ignored.
 
-wiecej formatów wraz ze screenshotami 
+
 podział na zone ze np 1 wideo per zone w jednym pliku pokazujac jeden feature?
 nawet pełnometrażowe tutoriale w planach i guides cnie autoguide moze?
-narrator napewno uzywajac whispercpp czy czegos podobnego i mp4 wsparcie
+
+zoom autozoom 
+demo regen
+auto flow discovery
+screenshots 
 index.html z calym guide 
+narrator whispercpp
+smart highlighting
+auto language 
+browser
+record and replay cut etc
+visual flow builder templates etc 
+dymki podswietlenia instrukcje przyciski slajdy next previous krok po kroku 
+podglad dekstop/mobile/web i tablety
+smart selectors 
+retry system branching variables steo validation undo redo global actions versioning export import errorlogs 
+self healing selectors instant replay reusable components 
+mp3 mp4 webp giff tiff avif
+png jpg
+
+gui/tui czy co tam do tych visual scripting w rust chyba 
+
+sqlite postgresql
+
+
 inspiracje 
+
 AutoDemo Demos-as-Code 
 autodemo joshshiman
 
