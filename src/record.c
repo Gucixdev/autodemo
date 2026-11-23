@@ -3,7 +3,7 @@
 /* ---------------------------------------------------------- recorder ---- */
 typedef struct {
   /* config */
-  int cols, rows, fps, fontpx, loop, theme, backend, gui, x11, size_set, page_new; char title[128], layout[16]; Img page;
+  int cols, rows, fps, fontpx, loop, theme, backend, gui, x11, size_set, page_new, bare; char title[128], layout[16]; Img page;
   char env[16][256]; int nenv; char cwd[512];
   /* canvas */
   int W, H, M, TB, PAD, tx0, ty0;
@@ -21,6 +21,8 @@ typedef struct {
   FILE *ff; int ff_written, ff_fps; char outfmt; /* w webp, v video */
   struct { long ms; char *file; int done; } snap[8]; int nsnap;
   long nframes; char slide_title[256];
+  /* privacy gate (leak.c) */
+  int nleak; char leak_kind[12][32], leak_hit[12][48]; int leak_err[12]; long leak_at[12];
 } G;
 
 static void msleep(G *g, int ms) {
@@ -30,7 +32,7 @@ static void msleep(G *g, int ms) {
   ms = (int)(ms * g->sleep_scale);
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L}; nanosleep(&ts, NULL);
 }
-static void tick(G *g, int ms); static void wait_ms(G *g, int ms); static int sp(G *g, int ms); static int jitter(int base); static void render_layer(G *g);
+static void leak_img(G *g, const Img *im); static void leak_grid(G *g); static void tick(G *g, int ms); static void wait_ms(G *g, int ms); static int sp(G *g, int ms); static int jitter(int base); static void render_layer(G *g);
 #include "gui.c"
 static void write_ppm(const Img *im, const char *path) {
   FILE *f = fopen(path, "wb"); if (!f) return;
@@ -74,7 +76,7 @@ static void put(G *g, const Img *im, int dur) {
 /* ---- rendering ---- */
 static void layout(G *g) {
   const Theme *t = &THEMES[g->theme];
-  g->M = CFG_MARGIN; g->TB = CFG_TITLEBAR_H; g->PAD = CFG_PADDING;
+  g->M = g->bare ? 0 : CFG_MARGIN; g->TB = g->bare ? 0 : CFG_TITLEBAR_H; g->PAD = g->bare ? 0 : CFG_PADDING;
   g->W = g->cols * cw + 2 * g->PAD + 2 * g->M; g->H = g->rows * ch + 2 * g->PAD + g->TB + 2 * g->M;
   if (g->gui) { g->PAD = 0; g->W = g->cols + 2 * g->M; g->H = g->rows + g->TB + 2 * g->M; } /* gui: cols x rows are pixels */
   g->W += g->W & 1; g->H += g->H & 1;
@@ -83,7 +85,7 @@ static void layout(G *g) {
 }
 static void render_layer(G *g) {
   const Theme *t = &THEMES[g->theme]; Img *L = &g->layer;
-  chrome_window(L, t, g->M, g->TB, g->title);
+  if (g->bare) img_fill(L, 0, 0, L->w, L->h, t->bg, 255); else chrome_window(L, t, g->M, g->TB, g->title);
   if (g->gui) { gui_blit(g); return; }
   if (!g->have_session) return;
   chrome_grid(L, t, &g->gr, g->tx0, g->ty0);
@@ -91,7 +93,7 @@ static void render_layer(G *g) {
 static void compose(G *g) {
   Img *F = &g->frame; memcpy(F->p, g->layer.p, (size_t)F->w * F->h * 4);
   if (g->ptr_on) chrome_pointer(F, g->px, g->py, g->ripple);
-  if (g->caption[0]) chrome_caption(F, g->caption, g->cap_top, g->M, g->TB);
+  if (g->caption[0]) chrome_caption(F, g->caption, g->cap_top, g->bare ? 14 : g->M, g->TB, g->bare ? 12 : CFG_CAPTION_PX);
 }
 static void present_dirty(G *g, int dur) {
   if (g->cut) return;

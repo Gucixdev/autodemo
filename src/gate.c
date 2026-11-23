@@ -30,6 +30,7 @@ static int gate_verdict(G *g) {
   if (g->ninputs && g->nstates <= 1) { say(LV_ERR, "%d input(s) sent but the screen never changed\n", g->ninputs); err++; }
   else if (g->nstates <= 2 && g->T > 3000) say(LV_WARN, "only %d distinct screens in %.1fs; looks static\n", g->nstates, g->T / 1000.0);
   if (g->peak_styles < CFG_GATE_MIN_STYLES && fill >= 3.0) say(LV_WARN, "only %d text style(s) seen; no colour, probably not the real UI\n", g->peak_styles);
+  err += leak_verdict(g);
   return err;
 }
 
@@ -48,6 +49,7 @@ static int capture(G *g) {
   if (memcmp(g->gr.c, g->prev.c, sz) || g->gr.cx != g->prev.cx || g->gr.cy != g->prev.cy || g->gr.cvis != g->prev.cvis) {
     g->idle = 0;
     memcpy(g->prev.c, g->gr.c, sz); g->prev.cx = g->gr.cx; g->prev.cy = g->gr.cy; g->prev.cvis = g->gr.cvis;
+    if (g->in_run && !g->dead) leak_grid(g);
     render_layer(g); g->dirty = 1;
   } else g->idle++;
   return 0;

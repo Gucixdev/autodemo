@@ -17,11 +17,30 @@ head -c 2 $T/s.ppm | grep -q P6 || fail snap
 $A preview .autodemo/examples/ls.demo | grep -q "README.md" || fail preview
 $A render .autodemo/examples/ls.demo -o $T/o.webm >/dev/null || fail webm
 [ -s $T/o.webm ] || fail "webm empty"
+# Audio: a sound track under mp4 (a made-up tone, no file shipped); a missing file is a check error; webp says it ignored it
+ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" $T/tone.mp3 || fail "ffmpeg tone"
+printf 'Size 60x10\nAudio "tone.mp3" 0.5\nRun bash --norc\nSend "echo hi\\n"\nSleep 3s\n' > $T/au.demo
+$A render $T/au.demo -o $T/au.mp4 >/dev/null 2>&1 || fail "audio render"
+ffprobe -v error -show_entries stream=codec_type -of csv=p=0 $T/au.mp4 | grep -q audio || fail "no audio stream in mp4"
+printf 'Audio "missing.mp3"\nRun ls\n' > $T/au2.demo
+if $A check $T/au2.demo >/dev/null 2>$T/au2.err; then fail "missing audio accepted"; fi
+grep -q "cannot read" $T/au2.err || fail "missing audio: no diagnostic"
+$A render $T/au.demo -o $T/au.webp 2>&1 | grep -q "Audio ignored" || fail "webp audio note"
 if command -v foot >/dev/null; then
   printf 'Window gui\nSize 600x300\nRun foot -F -e sh -c "echo gui-ok; exec sh"\nSleep 1s\nSend "echo x\\n"\nSleep 500ms\n' > $T/g.demo
   $A render $T/g.demo -o $T/g.webp >/dev/null 2>&1 || fail "gui render (foot)"
   [ -s $T/g.webp ] || fail "gui webp empty"
 fi
+# privacy gate: a screen that shows the login name / a token / an e-mail is refused (exit 4), --force keeps it, a clean one passes
+printf 'Size 70x8\nRun bash --norc\nSleep 400ms\nSend "echo $(id -un) ghp_abcdefghijklmnopqrstuvwxyz0123 me@mail.pl\\n"\nSleep 600ms\n' > $T/leak.demo
+rc=0; $A render $T/leak.demo -o $T/leak.webp 2>$T/leak.err >/dev/null || rc=$?
+[ "$rc" = 4 ] || fail "leak demo not refused (exit $rc)"
+for s in "login name" "token or key" "e-mail address"; do grep -q "$s" $T/leak.err || fail "leak not reported: $s"; done
+if grep -q "$(id -un)" $T/leak.err; then fail "leak report repeats the login name"; fi
+$A render $T/leak.demo -o $T/leak.webp --force >/dev/null 2>&1 || fail "--force should keep the leaky demo"
+# Chrome on|off: header accepted, anything else refused
+printf 'Chrome off\nRun ls\nSleep 200ms\n' > $T/c.demo; $A check $T/c.demo >/dev/null || fail "Chrome off rejected"
+printf 'Chrome maybe\nRun ls\n' > $T/c2.demo; if $A check $T/c2.demo >/dev/null 2>&1; then fail "Chrome maybe accepted"; fi
 # gui: WaitFor syntax (check only; no program needed)
 printf 'Window gui\nRun true\nWaitFor title "x" 2s\nWaitFor settle 500ms 5s\n' > $T/w1.demo; $A check $T/w1.demo >/dev/null || fail "check WaitFor title/settle"
 printf 'Window gui\nRun true\nWaitFor settle soon\n' > $T/w2.demo; if $A check $T/w2.demo 2>/dev/null; then fail "WaitFor settle without duration accepted"; fi
@@ -55,4 +74,26 @@ else echo "skip: PySide6 not installed (Qt gui tests)" >&2; fi
 if AUTODEMO_TEST_FIREFOX=${AUTODEMO_TEST_FIREFOX:-1}; [ "$AUTODEMO_TEST_FIREFOX" = 1 ] && sh test/ffbox --probe >/dev/null 2>&1; then   # Firefox flatpak in bwrap: web-content clicks + <select> popup
   $A render test/gui-firefox.demo -o $T/ff.webp >$T/ff.out 2>&1 || { cat $T/ff.out; fail "gui render (Firefox: web content click, select popup)"; }
 else echo "skip: Firefox flatpak/bwrap not available (or AUTODEMO_TEST_FIREFOX=0)" >&2; fi
+# rec: a scripted "human" plays a shell in a pty (typing, a pause, Backspace, Up); the written .demo must check and replay
+cat > $T/drive.py <<'P'
+import pty, os, time, select, struct, fcntl, termios, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm-256color"; os.execv(sys.argv[1], ["autodemo", "rec", sys.argv[2], "--size", "80x20"])
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
+def pump(t):
+    end = time.time() + t
+    while time.time() < end:
+        if select.select([fd], [], [], 0.1)[0]:
+            try: os.read(fd, 65536)
+            except OSError: return
+pump(2)
+for c, d in [(b"echo hi", 0.1), (b"\r", 1.0), (b"abc", 0.1), (b"\x7f", 0.1), (b"\x1b[A", 0.3), (b"\x1d", 0.5)]:
+    os.write(fd, c); pump(d)
+os.waitpid(pid, 0)
+P
+python3 -I $T/drive.py "$(pwd)/$A" $T/rec.demo >/dev/null 2>&1 || fail "rec driver"
+grep -q 'Send "echo hi\\n"' $T/rec.demo && grep -q "SendKey BSpace Up" $T/rec.demo && grep -q "^Sleep" $T/rec.demo || { cat $T/rec.demo; fail "rec wrote the wrong script"; }
+$A check $T/rec.demo >/dev/null || fail "rec script does not check"
+if $A rec $T/rec.demo >/dev/null 2>&1; then fail "rec overwrote a file"; fi
 echo "all tests passed"

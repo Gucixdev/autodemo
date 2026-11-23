@@ -2,17 +2,17 @@
  * Included by autodemo.c after say(), the themes and the effect names. Nothing here touches tmux or the screen. */
 /* ------------------------------------------------------------ script ---- */
 enum { C_RUN, C_TYPE, C_KEY, C_WAIT, C_CAPTION, C_SLIDE, C_TRANS, C_CMOVE, C_CCLICK,
-       C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
-       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_FEATEND, C_PSCROLL, C_MSCROLL, C_LAYOUT, C_CLIPBOARD, C_NOP };
+       C_CHIDE, C_CSHOW, C_WINDOW, C_THEME, C_CHROME, C_SIZE, C_LOOP, C_FPS, C_FONT, C_TITLE,
+       C_ENV, C_CD, C_SETUP, C_SPEED, C_AUTOCUT, C_TYPING, C_CUT, C_CUTEND, C_WAITFOR, C_FEATURE, C_FEATEND, C_PSCROLL, C_MSCROLL, C_LAYOUT, C_CLIPBOARD, C_AUDIO, C_NOP };
 typedef struct { int op, line, n; char *a[6]; } Cmd;
 typedef struct { Cmd *v; int n, cap; } Script;
 
 static const struct { const char *name; int op, min, max; } SPEC[] = {
   {"run",C_RUN,1,1},{"send",C_TYPE,1,2},{"sendkey",C_KEY,1,5},{"sleep",C_WAIT,1,1},{"mousemove",C_CMOVE,2,3},{"mouseclick",C_CCLICK,0,0},{"mousehide",C_CHIDE,0,0},{"mouseshow",C_CSHOW,0,0},
   {"caption",C_CAPTION,1,3},{"slide",C_SLIDE,1,3},{"transition",C_TRANS,1,3},{"speed",C_SPEED,1,1},{"autocut",C_AUTOCUT,1,1},{"typing",C_TYPING,1,1},{"cut",C_CUT,0,0},{"cutend",C_CUTEND,0,0},{"waitfor",C_WAITFOR,1,3},{"feature",C_FEATURE,1,1},{"pagescroll",C_PSCROLL,1,2},{"mousescroll",C_MSCROLL,1,2},
-  {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
+  {"window",C_WINDOW,1,1},{"theme",C_THEME,1,1},{"chrome",C_CHROME,1,1},{"size",C_SIZE,1,1},{"loop",C_LOOP,0,0},
   {"fps",C_FPS,1,1},{"font",C_FONT,1,1},{"title",C_TITLE,1,1},{"env",C_ENV,1,1},
-  {"cd",C_CD,1,1},{"layout",C_LAYOUT,1,1},{"clipboard",C_CLIPBOARD,1,1},{"setup",C_SETUP,1,1},{0}};
+  {"cd",C_CD,1,1},{"layout",C_LAYOUT,1,1},{"clipboard",C_CLIPBOARD,1,1},{"audio",C_AUDIO,1,2},{"setup",C_SETUP,1,1},{0}};
 
 static int dur_ms(const char *s, int *out) {
   char *e; double v = strtod(s, &e);
@@ -188,6 +188,12 @@ static int parse_script(const char *path, Script *sc) {
       else if (c.n == 3) { say(LV_ERR, "%s:%d: WaitFor \"text\" [timeout] (Window gui: WaitFor title \"text\" [timeout] | WaitFor settle MS [timeout])\n", path, line); ok = 0; }
       else if (c.n == 2 && dur_ms(c.a[1], &ms)) { say(LV_ERR, "%s:%d: bad timeout '%s'\n", path, line, c.a[1]); ok = 0; }
       break;
+    case C_AUDIO: { /* Audio "file.mp3" [volume 0..4]: a sound track under mp4/webm; the file is looked up next to the demo */
+      char ap[1100]; const char *fa = c.a[0], *sl = strrchr(path, '/');
+      if (fa[0] == '/' || !sl) snprintf(ap, sizeof ap, "%s", fa); else snprintf(ap, sizeof ap, "%.*s/%s", (int)(sl - path), path, fa);
+      if (access(ap, R_OK)) { say(LV_ERR, "%s:%d: Audio: cannot read %s\n", path, line, ap); ok = 0; }
+      else if (c.n == 2 && (atof(c.a[1]) <= 0 || atof(c.a[1]) > 4)) { say(LV_ERR, "%s:%d: Audio \"file\" [volume 0..4]\n", path, line); ok = 0; }
+      break; }
     case C_LAYOUT: if (strcmp(c.a[0], "us") && strcmp(c.a[0], "pl")) { say(LV_ERR, "%s:%d: Layout us|pl\n", path, line); ok = 0; } break;
     case C_AUTOCUT: if (strcmp(c.a[0], "off") && strcmp(c.a[0], "on") && atoi(c.a[0]) <= 0) { say(LV_ERR, "%s:%d: AutoCut on|off|MS\n", path, line); ok = 0; } break;
     case C_SPEED: if (atof(c.a[0]) < 0.25 || atof(c.a[0]) > 16) { say(LV_ERR, "%s:%d: speed 0.25..16\n", path, line); ok = 0; } break;
@@ -208,6 +214,7 @@ static int parse_script(const char *path, Script *sc) {
       int tk = 0; for (int q = 0; q < NTHEMES; q++) if (!strcmp(c.a[0], THEMES[q].name)) tk = 1;
       if (!tk) { char tl[256] = ""; for (int q = 0; q < NTHEMES; q++) { strncat(tl, q ? "|" : "", sizeof tl - strlen(tl) - 1); strncat(tl, THEMES[q].name, sizeof tl - strlen(tl) - 1); } say(LV_ERR, "%s:%d: theme %s (add one in src/config.h)\n", path, line, tl); ok = 0; }
       break; }
+    case C_CHROME: if (strcmp(c.a[0], "on") && strcmp(c.a[0], "off")) { say(LV_ERR, "%s:%d: chrome on|off\n", path, line); ok = 0; } break;
     case C_FPS: if (atoi(c.a[0]) < 1 || atoi(c.a[0]) > 30) { say(LV_ERR, "%s:%d: fps 1..30\n", path, line); ok = 0; } break;
     case C_FONT: if (atoi(c.a[0]) < 8 || atoi(c.a[0]) > 40) { say(LV_ERR, "%s:%d: font px 8..40\n", path, line); ok = 0; } break;
     case C_ENV: if (!strchr(c.a[0], '=')) { say(LV_ERR, "%s:%d: env KEY=VALUE\n", path, line); ok = 0; } break;

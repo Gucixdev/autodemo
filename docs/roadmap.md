@@ -17,6 +17,8 @@ Layout today: `.autodemo/examples/` holds everything (hand-written `NAME.demo`, 
 - Opener for webp: `mpv --loop` (open question).
 
 ## Known gaps
+- `rec` records the terminal backend only (no `Window gui` capture); keys come from the pty, so a key your terminal does not send (e.g. Ctrl+Shift combos) cannot be recorded.
+- `Audio` is one file per demo; no per-scene sound, no narration timing.
 - frost demo is sparse; 2x scale for the matrix theme; MouseScroll untested with a mouse-reporting app; `.demomobile` (low priority).
 - `gen -c`: the "N commands" label is fine, but captions are plain "Step N".
 

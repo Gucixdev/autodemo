@@ -86,6 +86,7 @@ static void apply_header(G *g, Script *sc) {
     switch (c->op) {
     case C_SIZE: sscanf(c->a[0], "%dx%d", &g->cols, &g->rows); g->size_set = 1; break;
     case C_THEME: for (int k = 0; k < NTHEMES; k++) if (!strcmp(c->a[0], THEMES[k].name)) g->theme = k; break;
+    case C_CHROME: g->bare = !strcmp(c->a[0], "off"); break;
     case C_FPS: g->fps = atoi(c->a[0]); break;
     case C_FONT: g->fontpx = atoi(c->a[0]); break;
     case C_LOOP: g->loop = 1; break;
