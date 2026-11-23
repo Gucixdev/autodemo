@@ -45,10 +45,10 @@ static void chrome_pointer(Img *F, double px, double py, int ripple) {
   }
 }
 /* caption bar, bottom (top = 0) or just under the title bar */
-static void chrome_caption(Img *F, const char *text, int top, int M, int TB) {
-  int px = CFG_CAPTION_PX, tw = text_width(fsansb, px, text), bw = tw + 36, bh = px + 22;
+static void chrome_caption(Img *F, const char *text, int top, int M, int TB, int px) {
+  int tw = text_width(fsansb, px, text), bw = tw + px * 9 / 5, bh = px * 21 / 10;
   if (bw > F->w - 20) bw = F->w - 20;
-  int bx = (F->w - bw) / 2, by = top ? M + TB + 14 : F->h - M - bh - 14;
-  img_rrect(F, bx, by, bw, bh, 10, CFG_CAPTION_BG, CFG_CAPTION_BG_ALPHA);
+  int bx = (F->w - bw) / 2, by = top ? M + TB + px * 7 / 10 : F->h - M - bh - px * 7 / 10;
+  img_rrect(F, bx, by, bw, bh, px / 2, CFG_CAPTION_BG, CFG_CAPTION_BG_ALPHA);
   draw_text(F, fsansb, px, bx + (bw - tw) / 2, by + bh / 2 + px / 3, text, CFG_CAPTION_FG, 255);
 }

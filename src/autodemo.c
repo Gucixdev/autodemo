@@ -45,6 +45,7 @@ static void say(int lv, const char *fmt, ...) {
 #include "term.c"
 #include "fx/chrome.c"
 #include "record.c"
+#include "leak.c"
 #include "gate.c"
 #include "fx/anim.c"
 #include "input.c"
@@ -56,7 +57,10 @@ static void say(int lv, const char *fmt, ...) {
 static int home_rm(const char *path, const struct stat *sb, int type, struct FTW *ft) { (void)sb; (void)type; (void)ft; remove(path); return 0; }
 static void home_cleanup(void) { if (!strncmp(tm_home, "/tmp/autodemo-home-", 19) && !strstr(tm_home, "..")) nftw(tm_home, home_rm, 16, FTW_DEPTH | FTW_PHYS); }
 
+#include "rec.c"
+
 int main(int argc, char **argv) {
+  if (argc >= 3 && !strcmp(argv[1], "rec")) return rec_cmd(argc, argv); /* rec OUT.demo [-s SETUP]... [--mouse] [--size CxR] [--] [CMD...] */
   if (argc >= 5 && !strcmp(argv[1], "sandbox")) { /* sandbox WORKDIR net|nonet CMD : run CMD with a private view of the system */
     int rc = sandbox_run(argv[2], !strcmp(argv[3], "net"), argv[4], argc > 5 ? argv[5] : NULL); if (rc < 0) { say(LV_ERR, "sandbox unavailable here\n"); return 125; } return rc;
   }
@@ -202,6 +206,18 @@ int main(int argc, char **argv) {
   present_dirty(g, 600);
   for (int i = 0; i < g->nsnap; i++) if (!g->snap[i].done && g->have_last) write_ppm(&g->last, g->snap[i].file);
   if (g->ff) { vid_flush(g, g->T); if (pclose(g->ff)) { say(LV_ERR, "ffmpeg failed\n"); return 1; } }
+  for (int i = 0; i < sc.n; i++) if (sc.v[i].op == C_AUDIO) { /* sound track: mux after the picture is done, so a failed demo never leaves a half-made file */
+    if (!g->ff) { say(LV_NOTE, "Audio ignored: a webp has no sound (render to mp4 or webm)\n"); break; }
+    char ap[1100], tmp[1100], fade[160], vol[64], dur[32]; const char *sl = strrchr(in, '/'); const char *fa = sc.v[i].a[0];
+    if (fa[0] == '/' || !sl) snprintf(ap, sizeof ap, "%s", fa); else snprintf(ap, sizeof ap, "%.*s/%s", (int)(sl - in), in, fa);
+    snprintf(tmp, sizeof tmp, "%s.audio%s", out, ext);
+    snprintf(vol, sizeof vol, "volume=%s", sc.v[i].n == 2 ? sc.v[i].a[1] : "1"); snprintf(dur, sizeof dur, "%.3f", g->T / 1000.0);
+    snprintf(fade, sizeof fade, "%s,afade=t=out:st=%.3f:d=1.5", vol, g->T / 1000.0 > 1.5 ? g->T / 1000.0 - 1.5 : 0.0);
+    int rc = run_self("/usr/bin/env", (char *[]){"env", "ffmpeg", "-loglevel", "error", "-y", "-i", (char *)out, "-stream_loop", "-1", "-i", ap, "-t", dur, "-map", "0:v", "-map", "1:a", "-c:v", "copy",
+             "-c:a", (char *)(!strcmp(ext, ".webm") ? "libopus" : "aac"), "-af", fade, tmp, NULL});
+    if (rc) { say(LV_ERR, "ffmpeg could not add %s (the picture-only file is kept)\n", ap); unlink(tmp); return 1; }
+    if (rename(tmp, out)) { perror(out); return 1; }
+    say(LV_NOTE, "audio: %s under %.1fs of video\n", fa, g->T / 1000.0); break; }
   if (g->enc) {
     WebPAnimEncoderAdd(g->enc, NULL, (int)g->T, NULL);
     WebPData data; WebPDataInit(&data);

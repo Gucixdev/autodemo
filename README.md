@@ -16,6 +16,8 @@ and renders an **animated WebP** (or mp4/webm). Written in C, links freetype + l
 | mp4 / webm via ffmpeg | done (needs ffmpeg) |
 | `preview` (ASCII key screens) | done |
 | GUI backend (`Window gui`): tiny headless Wayland compositor built into the binary, no external tools | works with foot, filem8, Qt (PySide6) and Firefox (clicks in web content, `<select>` popup); popups, dialogs, `WaitFor title\|settle`: see docs/gui.md |
+| `Audio "x.mp3" [volume]` | done: sound track under mp4/webm (looped, faded out at the end); webp has no sound and says so |
+| `autodemo rec OUT.demo` | done: you play the scenario by hand, it writes the `.demo` (keys, pauses, mouse with `--mouse`) |
 | Emacs mode | not started; the format is plain line-based on purpose |
 
 Limits: wide (CJK) glyphs take one cell, no italics, no blinking cursor, no bold face for
@@ -45,6 +47,16 @@ does not show README media that big), over 5 MiB warns. Live UIs (gtop, frost) a
 
 Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when piped or `NO_COLOR` is set.
 
+## Privacy gate
+
+Every `render` also asks: does the recording show who made it? Terminal demos: the exact text of every new screen is
+scanned. Picture (`Window gui`) demos: one picture per 1.2 s of video time (60 at most) goes through `tesseract`
+when it is installed (otherwise a note says it was skipped), so a pass there is a sample, not a proof. Looked for: the
+account's login name, home path, host name and real name; e-mail addresses (not `noreply`/`example`); token shapes
+(`ghp_`, `github_pat_`, `AKIA`, `sk-`, `-----BEGIN`, ...); and `password=`/`token:` lines (warning only). A hit is an
+error (exit 4, `--force` keeps the file) and is printed masked, never as the value itself. The bundled `ls` demo
+once printed the file owner this way; it now lists with `-og`.
+
 ## Usage
 
     make
@@ -53,6 +65,7 @@ Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when pipe
     ./autodemo preview x.demo
     ./autodemo features x.demo             # list Feature names
     ./autodemo render  x.demo --feature NAME | --split   # one feature, or one file per feature
+    ./autodemo rec x.demo [-s SETUP] [--mouse] [CMD...]   # play it by hand in a private tmux, Ctrl+] stops, writes x.demo
     ./autodemo gen  PROGRAM                # write .autodemo/examples/NAME.demo from --help + man EXAMPLES (plain text, edit it)
     ./autodemo auto PROGRAM                # gen + render, prints the README line
     ./autodemo export  ls.mp4 gtop features:page-scroll.webp         # NAME.fmt from .autodemo/examples -> .autodemo/examples

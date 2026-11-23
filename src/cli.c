@@ -5,6 +5,7 @@ static int usage(void) {
                   "       autodemo check X.demo        (validate the script)\n"
                   "       autodemo export NAME[:FEATURE].fmt... [--split]   (NAME from .autodemo/examples; --split = one file per Feature)\n"
                   "       autodemo gen PROGRAM [-d DIR] [-s SETUP]... [-c CMD]...  (write a .demo that shows the program working: your -c commands, else man EXAMPLES, else README usage lines);  autodemo auto PROGRAM = gen + render\n"
+                  "       autodemo rec OUT.demo [-s SETUP]... [--mouse] [--size COLSxROWS] [--force] [--] [CMD...]   (play the scenario by hand in a private tmux; Ctrl+] stops; writes the .demo)\n"
                   "       autodemo features X.demo     (list the Feature sections)\n"
                   "       autodemo bulk export [fmt] [NAME...] | check | preview | clean | list\n"
                   "  no -o: writes NAME.<CFG_FORMAT> next to the .demo\n  -q N   webp: 0 = lossless, 1..100 = lossy; default CFG_QUALITY quality\n");

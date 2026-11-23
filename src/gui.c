@@ -12,7 +12,7 @@
 #include <signal.h>
 
 enum { T_NONE, T_DISPLAY, T_REGISTRY, T_CALLBACK, T_COMPOSITOR, T_SURFACE, T_REGION, T_SHM, T_POOL, T_BUFFER, T_WMBASE, T_XSURF,
-       T_TOPLEVEL, T_SEAT, T_POINTER, T_KEYBOARD, T_OUTPUT, T_SUBCOMP, T_SUBSURF, T_NOP, T_POSNR, T_POPUP, T_DDMGR, T_DDEV, T_DSRC };
+       T_TOPLEVEL, T_SEAT, T_POINTER, T_KEYBOARD, T_OUTPUT, T_SUBCOMP, T_SUBSURF, T_NOP, T_POSNR, T_POPUP, T_DDMGR, T_DDEV, T_DSRC, T_DECOMGR, T_DECO };
 #define MAXO 1024
 #define MAXS 128
 #define NKIDS 32
@@ -83,7 +83,8 @@ static long wl_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t)
 
 /* ---- globals ---- */
 static const struct { const char *name; int ver; int type; } GL[] = {{"wl_compositor", 4, T_COMPOSITOR}, {"wl_shm", 1, T_SHM}, {"xdg_wm_base", 2, T_WMBASE}, {"wl_seat", 5, T_SEAT},
-  {"wl_output", 2, T_OUTPUT}, {"wl_subcompositor", 1, T_SUBCOMP}, {"wl_data_device_manager", 3, T_DDMGR}};
+  {"wl_output", 2, T_OUTPUT}, {"wl_subcompositor", 1, T_SUBCOMP}, {"wl_data_device_manager", 3, T_DDMGR},
+  {"zxdg_decoration_manager_v1", 1, T_DECOMGR}};   /* offered only with `Chrome off`: the client then draws no title bar of its own */
 static char KEYMAP[512]; static size_t KEYMAPN;   /* xkb text; clients compile it with their own xkeyboard-config, so a layout is just a name */
 static void keymap_set(const char *layout) {
   KEYMAPN = (size_t)snprintf(KEYMAP, sizeof KEYMAP, "xkb_keymap { xkb_keycodes { include \"evdev+aliases(qwerty)\" }; xkb_types { include \"complete\" }; xkb_compat { include \"complete\" }; xkb_symbols { include \"pc+%s+inet(evdev)\" }; xkb_geometry { include \"pc(pc105)\" }; };\n", layout && *layout ? layout : "us") + 1;
@@ -252,7 +253,7 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
   case T_DISPLAY:
     if (op == 0) { uint32_t cb = rd(&p); snd(c, cb, 0, "u", 0u); snd(c, 1, 1, "u", cb); }              /* sync */
     else if (op == 1) { uint32_t r = rd(&p); c->o[r].type = T_REGISTRY;                                   /* get_registry */
-      for (size_t i = 0; i < sizeof GL / sizeof *GL; i++) snd(c, r, 0, "usu", (uint32_t)i + 1, GL[i].name, (uint32_t)GL[i].ver); }
+      for (size_t i = 0; i < sizeof GL / sizeof *GL; i++) if (GL[i].type != T_DECOMGR || g->bare) snd(c, r, 0, "usu", (uint32_t)i + 1, GL[i].name, (uint32_t)GL[i].ver); }
     break;
   case T_REGISTRY:
     if (op == 0) { uint32_t name = rd(&p); const char *in = rds(&p); uint32_t ver = rd(&p), nid = rd(&p);
@@ -299,6 +300,14 @@ static void dispatch(G *g, Cli *c, uint32_t id, int op, const unsigned char *p, 
   case T_WMBASE:
     if (op == 2) { uint32_t n = rd(&p), sf = rd(&p); if (n < MAXO && sf < MAXO && c->o[sf].type == T_SURFACE) { c->o[n].type = T_XSURF; c->o[n].a = c->o[sf].a; c->s[c->o[sf].a].xobj = n; } }
     else if (op == 1) { uint32_t n = rd(&p); if (n >= MAXO) break; c->o[n].type = T_NOP; for (int i = 0; i < 32; i++) if (!c->posused[i]) { c->posused[i] = 1; memset(&c->pos[i], 0, sizeof c->pos[i]); c->o[n].type = T_POSNR; c->o[n].a = i; break; } }
+    break;
+  case T_DECOMGR:                                                                                       /* destroy / get_toplevel_decoration(id, toplevel): always server side */
+    if (op == 1) { uint32_t n = rd(&p), tp = rd(&p); if (n < MAXO) { c->o[n].type = T_DECO; snd(c, n, 0, "u", 2u);
+        if (tp < MAXO && c->o[tp].type == T_TOPLEVEL) { int si = c->o[tp].a; tl_configure(g, c, si, c->s[si].acted); } } }   /* the mode counts at the next configure */
+    else if (op == 0) del_id(c, id);
+    break;
+  case T_DECO:                                                                                          /* set_mode / unset_mode: the answer stays server side */
+    if (op == 0) del_id(c, id); else snd(c, id, 0, "u", 2u);
     break;
   case T_POSNR: {
     Posnr *q = &c->pos[o->a];
@@ -512,14 +521,14 @@ static int gui_capture(G *g) {
   if (W.pid > 0 && !g->dead) { int st; if (waitpid(W.pid, &st, WNOHANG) == W.pid) { g->dead = 1; g->dead_status = WIFEXITED(st) ? WEXITSTATUS(st) : 1; W.pid = 0; } }
   Img *P = &g->page; if (!P->p) return 0;
   uint64_t h = 1469598103934665603ULL; for (long i = 0; i < (long)P->w * P->h * 4; i += 61) h = (h ^ P->p[i]) * 1099511628211ULL;
-  if (h != g->last_hash) { g->nstates++; g->last_hash = h; g->idle = 0; render_layer(g); g->dirty = 1; } else g->idle++;
+  if (h != g->last_hash) { g->nstates++; g->last_hash = h; g->idle = 0; leak_img(g, P); render_layer(g); g->dirty = 1; } else g->idle++;
   return 0;
 }
 static void gui_blit(G *g) {
   Img *L = &g->layer, *P = &g->page; if (!P->p) return;
   for (int y = 0; y < P->h && g->ty0 + y < L->h; y++) {
     int skip = 0, fb = P->h - 1 - y;
-    if (fb < CFG_CORNER_R) { double dy = CFG_CORNER_R - fb - 0.5; skip = CFG_CORNER_R - (int)sqrt((double)CFG_CORNER_R * CFG_CORNER_R - dy * dy); }
+    if (!g->bare && fb < CFG_CORNER_R) { double dy = CFG_CORNER_R - fb - 0.5; skip = CFG_CORNER_R - (int)sqrt((double)CFG_CORNER_R * CFG_CORNER_R - dy * dy); }
     if (P->w - skip > skip) memcpy(L->p + ((size_t)(g->ty0 + y) * L->w + g->tx0 + skip) * 4, P->p + ((size_t)y * P->w + skip) * 4, (size_t)(P->w - 2 * skip) * 4);
   }
 }
