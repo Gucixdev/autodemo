@@ -45,8 +45,6 @@ The demos in `.autodemo/examples/` carry no machine paths. `$AUTODEMO_ROOT` is t
 nothing. Warnings for sparse or static screens. GitHub check on the output: over 10 MiB is refused (exit 5, GitHub
 does not show README media that big), over 5 MiB warns. Live UIs (gtop, frost) are better as a short `Loop`.
 
-Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when piped or `NO_COLOR` is set.
-
 ## Privacy gate
 
 Every `render` also asks: does the recording show who made it? Terminal demos: every new screen is scanned; picture demos
@@ -87,11 +85,10 @@ sessions are never touched. `setup` lines prepare files in that HOME.
                                               -> overlays (caption, pointer) -> frame
                                               -> dedup -> WebPAnimEncoder / ffmpeg
 
-Backends: the terminal (private tmux) and the gui backend (built-in Wayland compositor, see `src/gui.c`); the overlay/transition/encoder stages work on plain RGBA images.
-
+Backends: private tmux, or the built-in Wayland compositor (`src/gui.c`); the later stages work on plain RGBA images.
 ## Tests
 
-    make test
+    make test   (about 80 s; the Firefox GUI test is skipped without the flatpak and bwrap)
 
 ## Reference
 
