@@ -1,15 +1,40 @@
-# frost editor: open a file in a private HOME and edit it
 Size 100x28
-Theme dark
+Theme matrix
+Chrome off
 Title "frost"
-Setup mkdir -p $HOME/w && printf 'fn main() {\n    println!("hello");\n}\n' > $HOME/w/hello.rs
+Setup mkdir -p $HOME/w && printf 'use std::collections::HashMap;\n\nstruct Counter {\n    count: u32,\n}\n\nfn main() {\n    let mut count = 0;\n    let mut words: HashMap<String, u32> = HashMap::new();\n    for w in "a b a c b a".split(\x27 \x27) {\n        *words.entry(w.to_string()).or_insert(0) += 1;\n        count += 1;\n    }\n    println!("{count} words, {} unique", words.len());\n}\n' > $HOME/w/count.rs
 Cd /tmp
-Run ${FROST:-frost} $HOME/w/hello.rs
+Run ${FROST:-frost} $HOME/w/count.rs
 Sleep 1s
-Caption "frost - a small Rust editor" bottom
-SendKey Down Down
-Sleep 500ms
-Send "// typed by autodemo" 60
-SendKey Escape
+Caption "frost - a small Rust editor: menus, tabs, 199 languages" bottom
 Sleep 1500ms
+Feature "multi-cursor" {
+  Caption "Ctrl-D: select a word, then the next occurrence at every press" bottom
+  SendKey Down*7 Right*12
+  SendKey C-d
+  Sleep 700ms
+  SendKey C-d
+  Sleep 700ms
+  SendKey C-d
+  Sleep 900ms
+  Send "total" 80
+  Sleep 1200ms
+  SendKey Escape
+}
+Feature "palette" {
+  Caption "Ctrl-P: command palette" bottom
+  SendKey C-p
+  Sleep 700ms
+  Send "diff" 90
+  Sleep 1200ms
+  SendKey Escape
+  Sleep 500ms
+}
+Feature "keys" {
+  Caption "F1: every action with its keys, rebindable" bottom
+  SendKey F1
+  Sleep 2s
+  SendKey Escape
+  Sleep 800ms
+}
 Loop

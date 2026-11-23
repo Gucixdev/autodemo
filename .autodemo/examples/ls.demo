@@ -8,7 +8,7 @@ Cd /tmp
 Run bash -i
 Caption "Colorful listing, one command" bottom
 Sleep 500ms
-Send "cd ~/proj && ls --color=always -la" 45
+Send "cd ~/proj && ls --color=always -laog" 45
 SendKey Enter
 Sleep 1s
 Caption "Now recurse" bottom

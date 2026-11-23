@@ -3,20 +3,16 @@ Size 80x24
 Theme dracula
 Title "qlogin"
 Cd /tmp
-Run sh /data/dev/github/autodemo/.autodemo/examples/qlogin/run
-WaitFor "login:" 15s
+Run "$AUTODEMO_ROOT/../qlogin/rundemotui"
+WaitFor "pwd" 15s
 Caption "qlogin: login on the console, PAM, no GUI" bottom
 Sleep 1s
-Send "drbongo\n"
-WaitFor "password:" 5s
+Send "demo\t"
+Sleep 300ms
 Send "wrong\n"
 Caption "a wrong password: the lockout delay grows" bottom
 Sleep 2s
-Send "drbongo\n"
-WaitFor "password:" 5s
 Send "secret\n"
-Caption "the password is never echoed; then the session picker" bottom
-Sleep 3s
-SendKey Down
-Sleep 1s
+Caption "nothing is drawn for the password; the login goes straight into the session" bottom
+Sleep 2s
 Loop
