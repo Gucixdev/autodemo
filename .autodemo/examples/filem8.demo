@@ -1,13 +1,37 @@
-# filem8 (GUI file manager) in the built-in compositor
+# filem8 (GUI file manager) in the built-in compositor: views, tabs, dual pane
 Window gui
-Size 900x560
+Chrome off
+Size 960x600
 Title "filem8"
 Env FM8_BACKEND=soft
-Run ${FILEM8:-filem8}
-Sleep 2s
-Caption "filem8" bottom
-MouseMove 300 200 700ms
-MouseClick
+Setup mkdir -p $HOME/.config/filem8 && printf 'variant = dark\nbg = #000000\nbg_alt = #07140d\nfg = #00ff88\nfg_dim = #00a35a\naccent = #00ff88\naccent_fg = #000000\nborder = #00552d\nborder_focus = #00ff88\nselection_bg = #00ff88\nselection_fg = #000000\nurgent = #ff3355\nwarn = #ffee33\nok = #00ff88\nlink = #33c7de\nradius = 2\ncolor1 = #cc0000\ncolor2 = #23fd00\ncolor3 = #ffee33\ncolor4 = #3584e4\ncolor5 = #9944ff\ncolor6 = #33c7de\n' > $HOME/.config/filem8/theme && mkdir -p $HOME/Projects/frost/src $HOME/Pictures $HOME/Music $HOME/Documents && printf 'fn main() {}\n' > $HOME/Projects/frost/src/main.rs && printf '# notes\n' > $HOME/Documents/notes.md && printf 'hello\n' > $HOME/Documents/todo.txt && for c in red green blue orange purple teal; do magick -size 320x200 gradient:$c-black $HOME/Pictures/$c.png; done && magick -size 640x400 plasma:fractal $HOME/Pictures/plasma.jpg
+Run ${FILEM8:-filem8} $HOME
+WaitFor settle 600ms 20s
+Caption "filem8 - a file manager with its own widget toolkit" bottom
 Sleep 1500ms
-SendKey Down*3
-Sleep 1s
+MouseMove 300 132 600ms
+MouseClick
+Sleep 700ms
+SendKey Down*2
+Sleep 700ms
+SendKey Enter
+WaitFor settle 600ms 10s
+Sleep 800ms
+Caption "Ctrl+1/2/3: list, tiles, compact" bottom
+SendKey C-2
+WaitFor settle 400ms 10s
+Sleep 1200ms
+SendKey C-3
+WaitFor settle 400ms 10s
+Sleep 1000ms
+SendKey C-1
+Sleep 800ms
+Caption "F3: dual pane, F5 copies to the other one" bottom
+SendKey F3
+WaitFor settle 500ms 10s
+Sleep 1500ms
+Caption "Ctrl+T: tabs" bottom
+SendKey C-t
+WaitFor settle 500ms 10s
+Sleep 1500ms
+Loop

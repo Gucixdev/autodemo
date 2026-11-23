@@ -49,13 +49,10 @@ Output is `error` (red) / `warn` (yellow) / `ok` / `note` lines; plain when pipe
 
 ## Privacy gate
 
-Every `render` also asks: does the recording show who made it? Terminal demos: the exact text of every new screen is
-scanned. Picture (`Window gui`) demos: one picture per 1.2 s of video time (60 at most) goes through `tesseract`
-when it is installed (otherwise a note says it was skipped), so a pass there is a sample, not a proof. Looked for: the
-account's login name, home path, host name and real name; e-mail addresses (not `noreply`/`example`); token shapes
-(`ghp_`, `github_pat_`, `AKIA`, `sk-`, `-----BEGIN`, ...); and `password=`/`token:` lines (warning only). A hit is an
-error (exit 4, `--force` keeps the file) and is printed masked, never as the value itself. The bundled `ls` demo
-once printed the file owner this way; it now lists with `-og`.
+Every `render` also asks: does the recording show who made it? Terminal demos: every new screen is scanned; picture demos
+(`Window gui`): a sample of frames goes through `tesseract` when installed (a pass is a sample, not a proof). Looked for: login
+name, home path, host and real name, e-mail addresses, token shapes (`ghp_`, `AKIA`, `sk-`, `-----BEGIN`, ...). A hit is an error
+(exit 4, `--force` keeps the file), printed masked.
 
 ## Usage
 
