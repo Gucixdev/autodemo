@@ -170,8 +170,8 @@ int main(int argc, char **argv) {
   { /* $AUTODEMO_ROOT = project root (parent of .autodemo/examples), so demos can run ./bin/x without absolute paths */
     char rp[PATH_MAX], *sl;
     if (realpath(in, rp) && (sl = strrchr(rp, '/'))) {
-      *sl = 0; size_t l = strlen(rp); const char *t = "/.autodemo/examples";
-      if (l >= strlen(t) && !strcmp(rp + l - strlen(t), t)) rp[l - strlen(t)] = 0;
+      *sl = 0; const char *t = "/.autodemo/examples"; char *at = strstr(rp, t);   /* also from a subfolder of examples */
+      if (at && (!at[strlen(t)] || at[strlen(t)] == '/')) *at = 0;
       setenv("AUTODEMO_ROOT", rp, 1);
     }
   }
